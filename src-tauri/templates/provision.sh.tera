@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# =============================================================================
+# Easix provisioning script
+# Generated for: {{ profile.hostname }} ({{ profile.os }})
+# =============================================================================
+
+echo "=== Easix provisioning started ==="
+
+# --- Hostname ---
+echo "Setting hostname to {{ profile.hostname }}..."
+hostnamectl set-hostname "{{ profile.hostname }}"
+
+# --- System update ---
+echo "Updating package lists..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+
+{% if profile.packages | length > 0 %}
+# --- Packages ---
+echo "Installing packages: {{ profile.packages | join(sep=", ") }}..."
+apt-get install -y -qq \
+  {{ profile.packages | join(sep=" \\\n  ") }}
+{% endif %}
+
+# --- User ---
+echo "Configuring user '{{ profile.user.name }}'..."
+if ! id "{{ profile.user.name }}" &>/dev/null; then
+    useradd -m -s /bin/bash "{{ profile.user.name }}"
+fi
+{% if profile.user.sudo %}
+usermod -aG sudo "{{ profile.user.name }}"
+{% endif %}
+
+{% if profile.network.mode == "static" and profile.network.address %}
+# --- Network (static) ---
+echo "Configuring static network..."
+cat > /etc/netplan/01-easix.yaml << 'NETPLAN'
+network:
+  version: 2
+  ethernets:
+    eth0:
+      addresses:
+        - {{ profile.network.address }}
+{% if profile.network.gateway %}
+      routes:
+        - to: default
+          via: {{ profile.network.gateway }}
+{% endif %}
+{% if profile.network.dns %}
+      nameservers:
+        addresses:
+          - {{ profile.network.dns }}
+{% endif %}
+NETPLAN
+netplan apply || true
+{% endif %}
+
+{% if profile.security.ufw %}
+# --- Firewall ---
+echo "Enabling UFW firewall..."
+apt-get install -y -qq ufw
+ufw --force enable
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+{% endif %}
+
+{% if profile.security.ssh_key %}
+# --- SSH key ---
+echo "Deploying SSH key for {{ profile.user.name }}..."
+USER_HOME=$(eval echo "~{{ profile.user.name }}")
+mkdir -p "$USER_HOME/.ssh"
+echo "{{ profile.security.ssh_key }}" >> "$USER_HOME/.ssh/authorized_keys"
+chmod 700 "$USER_HOME/.ssh"
+chmod 600 "$USER_HOME/.ssh/authorized_keys"
+chown -R "{{ profile.user.name }}:{{ profile.user.name }}" "$USER_HOME/.ssh"
+{% endif %}
+
+{% if profile.autostart %}
+# --- Autostart (legacy) ---
+echo "Configuring autostart service..."
+cat > /etc/systemd/system/easix-autostart.service << 'UNIT'
+[Unit]
+Description=Easix autostart
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart={{ profile.autostart }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable easix-autostart.service
+{% endif %}
+
+{% for script in profile.custom_scripts %}
+{% if script.mode == "run_once" %}
+# --- Custom script: {{ script.name }} (run once) ---
+echo "Running custom script '{{ script.name }}'..."
+cat > /tmp/easix-custom-{{ script.name }}.sh << 'EASIX_SCRIPT_{{ loop.index }}'
+{{ script.content }}
+EASIX_SCRIPT_{{ loop.index }}
+chmod +x /tmp/easix-custom-{{ script.name }}.sh
+bash /tmp/easix-custom-{{ script.name }}.sh
+rm -f /tmp/easix-custom-{{ script.name }}.sh
+{% elif script.mode == "autostart" %}
+# --- Custom script: {{ script.name }} (autostart) ---
+echo "Installing autostart script '{{ script.name }}'..."
+mkdir -p /opt/easix/scripts
+cat > /opt/easix/scripts/{{ script.name }}.sh << 'EASIX_SCRIPT_{{ loop.index }}'
+{{ script.content }}
+EASIX_SCRIPT_{{ loop.index }}
+chmod +x /opt/easix/scripts/{{ script.name }}.sh
+
+cat > /etc/systemd/system/easix-{{ script.name }}.service << 'EASIX_UNIT_{{ loop.index }}'
+[Unit]
+Description=Easix custom: {{ script.name }}
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/easix/scripts/{{ script.name }}.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EASIX_UNIT_{{ loop.index }}
+systemctl daemon-reload
+systemctl enable easix-{{ script.name }}.service
+{% endif %}
+{% endfor %}
+
+echo "=== Easix provisioning completed ==="

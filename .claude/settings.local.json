@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl -e bash -c \"cd /home/projekty/easix && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt\")",
+      "Bash(wsl -e bash -c \"cd /home/projekty/easix/ui && npm install\")",
+      "Bash(wsl -e bash -c \"cd /home/projekty/easix && rm -rf app/ ui/ requirements.txt .venv/\")",
+      "Bash(wsl -e bash -c \"ls -la /home/projekty/easix/\")",
+      "Bash(wsl -e bash -c \"rm -rf /home/projekty/easix/ui/\")",
+      "Bash(wsl -e bash -c \"which cargo 2>&1; which rustc 2>&1; rustup --version 2>&1\")",
+      "Bash(wsl -e bash -c \"cd /home/projekty/easix && rm -rf node_modules package-lock.json && npm install\")",
+      "Bash(wsl -e bash -c \"dpkg -l | grep -E ''libwebkit2gtk-4.1|libgtk-3'' | head -5\")",
+      "Bash(wsl -e bash -c:*)",
+      "WebFetch(domain:static.m89.pl)"
+    ]
+  }
+}
