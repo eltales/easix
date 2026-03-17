@@ -54,7 +54,7 @@ pub fn deploy_ssh(
 
         let mut channel = sess.channel_session().map_err(|e| e.to_string())?;
         channel
-            .exec(&format!("bash {remote_path}"))
+            .exec(&format!("sh {remote_path}"))
             .map_err(|e| e.to_string())?;
         let mut output = String::new();
         channel.read_to_string(&mut output).map_err(|e| e.to_string())?;

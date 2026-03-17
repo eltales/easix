@@ -1,128 +1,189 @@
-# CLAUDE.md — Easix
+# CLAUDE.md
 
-## O projekcie
+## Język
+Zawsze odpowiadaj po polsku. Kod, komentarze w kodzie i nazwy plików po angielsku.
 
-Easix — desktopowa aplikacja do provisioningu i konfiguracji systemów Linux.
-Pozwala tworzyć profile konfiguracyjne przez GUI i generować skrypty bash dla Debian 11 / Ubuntu 22.04.
-Docelowi użytkownicy: zespoły techniczne, administratorzy laboratoriów, centra szkoleniowe.
+---
 
-## Rola asystenta
+## Inicjalizacja
 
-Jesteś profesjonalnym twórcą aplikacji desktopowych. Komunikujesz się po polsku. Kod, nazwy zmiennych, commity i komentarze w kodzie — po angielsku.
+Jeśli `planning.md` NIE istnieje lub `docs/PRD.md` NIE istnieje:
+→ Przeczytaj `.claude/init.md` i wykonaj opisany tam protokół.
+→ Po zakończeniu inicjalizacji i /clear, wróć do tego pliku.
 
-## Styl pracy
-
-- Działaj od razu — nie pytaj o potwierdzenie, nie proponuj opcji, po prostu rób
-- Podejmuj decyzje samodzielnie i implementuj najlepsze rozwiązanie
-- Pytaj tylko gdy brakuje krytycznych informacji, bez których nie da się ruszyć
-- Twórz pliki, instaluj zależności, konfiguruj — bez czekania na zgodę
-
-## Zasady pracy
-
-### Ogólne
-- Zawsze czytaj istniejący kod przed modyfikacją
-- Preferuj edycję istniejących plików zamiast tworzenia nowych
-- Nie dodawaj funkcjonalności, refaktoryzacji ani "ulepszeń" wykraczających poza zlecenie
-- Nie twórz plików dokumentacji (README, docs/) bez wyraźnej prośby
-- Unikaj over-engineeringu — najprostsze rozwiązanie jest najlepsze
-- Nie dodawaj komentarzy do kodu, chyba że logika jest nieoczywista
-
-### Bezpieczeństwo
-- Waliduj dane wejściowe na granicach systemu (input użytkownika, API zewnętrzne)
-- Unikaj podatności OWASP Top 10 (XSS, SQL injection, CSRF itp.)
-- Nigdy nie commituj sekretów (.env, klucze API, tokeny)
-- Używaj parametryzowanych zapytań do bazy danych
-
-### Jakość kodu
-- Stosuj się do konwencji już obecnych w projekcie
-- Nazewnictwo zmiennych i funkcji powinno być opisowe i spójne
-- DRY — ale nie kosztem czytelności; 3 podobne linie to lepiej niż przedwczesna abstrakcja
-- Nie dodawaj type annotations, docstringów ani error handlingu do kodu, którego nie zmieniasz
-
-### Git
-- Commituj TYLKO gdy wyraźnie poproszę
-- Wiadomości commitów: krótkie, po angielsku, skupione na "dlaczego" a nie "co"
-- Dodawaj konkretne pliki (nie `git add .`)
-- Nigdy nie rób force push, reset --hard ani amend bez wyraźnej prośby
-
-### Testy
-- Pisz testy gdy poproszę lub gdy zmiana dotyczy krytycznej logiki biznesowej
-- Uruchamiaj istniejące testy po zmianach, żeby upewnić się że nic nie zepsułeś
+---
 
 ## Struktura projektu
 
 ```
-easix/
-├── src-tauri/                    # Rust backend (Tauri)
-│   ├── Cargo.toml
-│   ├── tauri.conf.json
-│   ├── build.rs
-│   ├── src/
-│   │   ├── main.rs               # Entry point + Tauri setup
-│   │   ├── models.rs             # Profile, UserConfig, NetworkConfig, SecurityConfig
-│   │   └── commands/
-│   │       ├── mod.rs
-│   │       ├── profiles.rs       # CRUD profili (list, get, save, delete)
-│   │       ├── generator.rs      # Generowanie skryptu bash (Tera)
-│   │       └── deploy.rs         # SSH deploy (opcjonalny, feature "ssh")
-│   └── templates/
-│       └── provision.sh.tera     # Szablon bash skryptu
-├── src/                          # React frontend (embedded w Tauri)
-│   ├── main.tsx
-│   ├── App.tsx
-│   ├── api.ts                    # Tauri invoke() wrapper
-│   ├── types.ts
-│   ├── index.css
-│   ├── components/
-│   │   └── Layout.tsx
-│   └── pages/
-│       ├── Dashboard.tsx
-│       ├── Editor.tsx
-│       ├── Preview.tsx
-│       └── Deploy.tsx
-├── index.html
-├── package.json
-├── vite.config.ts
-├── tailwind.config.js
+project-root/
 ├── CLAUDE.md
-└── PLAN.md
+├── planning.md
+├── docs/
+│   ├── PRD.md
+│   ├── architecture.md
+│   └── testing-strategy.md
+├── summary/
+│   └── [category].md
+└── .claude/
+    ├── init.md
+    ├── adr/
+    ├── commands/
+    ├── skills/
+    └── hooks/
 ```
 
-## Stack technologiczny
+---
 
-**Desktop:** Tauri 2.x (Rust) — natywne okno, bez przeglądarki, bez serwera HTTP
-**Frontend:** React 18 + TypeScript + TailwindCSS 3 + Vite (embedded w Tauri webview)
-**Backend:** Rust (Tauri commands via IPC) + Tera (szablony) + serde_json
-**Opcjonalnie:** ssh2 crate (feature flag `ssh`)
-**Format profili:** JSON (w `~/.config/easix/profiles/`)
-**Output:** Bash provisioning scripts
-**Obsługiwane OS:** Debian 11, Ubuntu 22.04
-**Packaging:** .deb / .AppImage / .msi
+## Wczytywanie kontekstu
 
-## Komendy deweloperskie
+Przed każdym zadaniem:
+1. Przeczytaj `planning.md` – znajdź aktualne zadanie i wymagane kategorie
+2. Załaduj TYLKO pliki summary/ wymienione w polu "Needs:"
+3. Nie ładuj innych plików summary bez wyraźnej potrzeby
+4. Podaj które pliki załadowałeś przed rozpoczęciem pracy
 
-```bash
-# Instalacja zależności frontend (z katalogu easix/)
-npm install
+---
 
-# Dev mode — uruchamia Vite + kompiluje Rust + otwiera natywne okno
-npm run tauri dev
+## Przetwarzanie plików
 
-# Build produkcyjny — tworzy paczkę .deb/.AppImage/.msi
-npm run tauri build
+- Czytaj pliki JEDEN PO JEDNYM, nigdy całych katalogów naraz
+- Po każdym pliku wyciągnij: cel, kluczowe funkcje/klasy, zależności, TODOs
+- Zapisz wnioski do `summary/[category].md` ZANIM przejdziesz do następnego pliku
 
-# Build z obsługą SSH
-cd src-tauri && cargo build --features ssh
-```
+---
 
-## Tauri Commands (IPC)
+## Dyscyplina zadań
 
-| Command | Argumenty | Zwraca | Opis |
-|---------|-----------|--------|------|
-| `list_profiles` | — | `string[]` | Lista nazw profili |
-| `get_profile` | `name` | `Profile` | Pobierz profil |
-| `save_profile` | `name, profile` | — | Zapisz profil |
-| `delete_profile` | `name` | — | Usuń profil |
-| `generate_script` | `profile` | `string` | Wygeneruj bash script |
-| `export_script` | `script, defaultName` | `string?` | Natywny dialog "Save as..." |
-| `deploy_ssh` | `profile, host, port, ...` | `string` | SSH upload + execute |
+Przed każdym zadaniem:
+- Powtórz zadanie w 1–2 zdaniach żeby potwierdzić zrozumienie
+
+Przed implementacją dotykającą >2 plików lub trwającą >15 minut:
+1. Zapisz plan do `planning.md` w sekcji `## Proposed Plan`
+2. Wymień: co zmienisz, czego NIE zmienisz, ryzyka
+3. STOP – czekaj na zatwierdzenie ("go ahead" / "zaczynaj")
+
+---
+
+## Kiedy pytać
+
+STOP i zapytaj gdy:
+- Wymaganie ma wiele interpretacji
+- Próbowałeś tego samego podejścia dwa razy bez sukcesu
+- Masz zmienić więcej niż 3 pliki naraz
+- Coś nieoczekiwanego zmienia podejście do zadania
+- Operacja jest nieodwracalna
+
+Działaj bez pytania przy:
+- Czytaniu plików
+- Uruchamianiu testów
+- Zapisywaniu do summary/ i planning.md
+
+---
+
+## Protokół gdy utknąłem
+
+Jeśli to samo podejście nie działa dwa razy:
+1. Zapisz do `planning.md`:
+   - Co próbowałem: ...
+   - Dlaczego myślę że nie działa: ...
+   - Alternatywne podejścia: [2–3 opcje]
+2. STOP – przedstaw to użytkownikowi
+3. NIE próbuj alternatyw bez zatwierdzenia
+
+---
+
+## Protokół pewności
+
+- Wysoka (>80%): działaj, zapisz założenia
+- Średnia (50–80%): powiedz założenia, zapytaj czy słuszne
+- Niska (<50%): STOP, wymień co jest niejasne, zapytaj
+
+Nigdy nie zakładaj po cichu. Zawsze pisz założenia jawnie:
+> "Zakładam X ponieważ Y. Kontynuuję jeśli nie powiedzisz inaczej."
+
+---
+
+## Protokół złożonych problemów
+
+Dla decyzji dotyczących architektury, bezpieczeństwa lub trudnych do cofnięcia:
+1. Zapisz `## Analysis` do planning.md
+2. Wymień min. 2 alternatywne podejścia z plusami/minusami
+3. Powiedz które rekomendujeLJ i DLACZEGO
+4. STOP – czekaj na zatwierdzenie
+
+---
+
+## Rollback
+
+Przed modyfikacją istniejącego pliku:
+1. Zapisz w planning.md: "Modyfikuję [plik] – stan oryginalny zachowany"
+2. Napisz co spodziewasz się że się stanie
+3. Napisz jak zweryfikujesz że zadziałało
+4. Jeśli weryfikacja nie przechodzi: przywróć oryginał, oznacz zadanie jako blocked
+
+---
+
+## Definition of Done
+
+Zadanie jest DONE tylko gdy:
+- [ ] Kod działa dla głównej ścieżki
+- [ ] Obsłużone edge cases (brak pliku, błąd sieci, pusty input)
+- [ ] Testy przechodzą: `[wpisz komendę testów]`
+- [ ] planning.md zaktualizowany: status: done, lista zmienionych plików
+- [ ] Odpowiedni plik summary/ zaktualizowany
+- [ ] Brak cichych TODOs w zmienionym kodzie
+
+Raportuj które checkboxy przeszły, które nie. Nie oznaczaj jako done dopóki wszystkie nie są zaliczone.
+
+---
+
+## Aktualizacja plików
+
+### planning.md – aktualizuj natychmiast gdy:
+- Zaczynasz zadanie → status: in-progress
+- Zadanie zablokowane → status: blocked, wypełnij pole Blocker
+- Zadanie skończone → status: done, lista zmienionych plików
+
+### summary/[category].md – aktualizuj po:
+- Przetworzeniu grupy plików (zapisz wnioski zanim przejdziesz dalej)
+- Rozwiązaniu nieoczywistego problemu (zapisz rozwiązanie)
+- Odkryciu czegoś nieoczekiwanego w kodzie
+
+---
+
+## Zarządzanie sesją
+
+Przed /clear lub końcem sesji:
+1. Zaktualizuj planning.md: oznacz skończone zadania, zapisz następny krok
+2. Dopisz nowe wnioski do odpowiednich plików summary/
+3. Potwierdź: "Kontekst zapisany. Gotowy do wyczyszczenia."
+
+Po /clear:
+1. Przeczytaj CLAUDE.md
+2. Przeczytaj planning.md – znajdź aktualny status i następny krok
+3. Załaduj TYLKO pliki summary/ z pola "Needs:"
+4. Wznów od pola "Next step:" w planning.md
+
+---
+
+## Dyscyplina kontekstu
+
+- Nie czytaj całych katalogów naraz
+- Po przetworzeniu każdych 5 plików: zapisz wnioski do summary/, poinformuj że kontekst rośnie
+- Nie czekaj aż kontekst się zapełni – zarządzaj nim proaktywnie
+- Gdy bieżąca faza skończona: zaproponuj /clear
+
+---
+
+## Spójność frameworka
+
+Gdy wymagania się zmieniają, aktualizuj pliki w tej kolejności:
+`docs/PRD.md` → `docs/architecture.md` → `planning.md` → `CLAUDE.md`
+
+Jeśli instrukcje między plikami są sprzeczne: STOP i zapytaj o wyjaśnienie.
+
+---
+
+## Dostępne skills
+(uzupełniane podczas inicjalizacji projektu)

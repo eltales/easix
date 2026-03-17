@@ -93,7 +93,7 @@ export default function Preview() {
         <>
           {profile && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 text-sm grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div><span className="text-gray-500">OS:</span> {profile.os === "ubuntu2204" ? "Ubuntu 22.04" : "Debian 11"}</div>
+              <div><span className="text-gray-500">OS:</span> {profile.os === "ubuntu2404" ? "Ubuntu 24.04" : profile.os === "ubuntu2204" ? "Ubuntu 22.04" : profile.os === "alpine318" ? "Alpine 3.18" : "Debian 11"}</div>
               <div><span className="text-gray-500">Host:</span> {profile.hostname}</div>
               <div><span className="text-gray-500">User:</span> {profile.user.name}{profile.user.sudo && " (sudo)"}</div>
               <div><span className="text-gray-500">Packages:</span> {profile.packages.length}</div>

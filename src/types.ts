@@ -30,10 +30,15 @@ export interface SystemConfig {
   ntp: boolean;
 }
 
+export interface SoftwareItem {
+  name: string;
+  commands: string[];
+}
+
 export interface Profile {
-  os: "debian11" | "ubuntu2204";
+  os: "debian11" | "ubuntu2204" | "ubuntu2404" | "alpine318";
   hostname: string;
-  packages: string[];
+  packages: SoftwareItem[];
   user: UserConfig;
   network: NetworkConfig;
   security: SecurityConfig;

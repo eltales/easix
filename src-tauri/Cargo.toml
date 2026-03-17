@@ -17,5 +17,5 @@ ssh2 = { version = "0.9", optional = true }
 dirs = "5"
 
 [features]
-default = []
+default = ["ssh"]
 ssh = ["ssh2"]

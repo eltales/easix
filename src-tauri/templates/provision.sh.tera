@@ -1,3 +1,27 @@
+{% if is_alpine %}
+#!/bin/sh
+set -eu
+
+# =============================================================================
+# Easix provisioning script
+# Generated for: {{ profile.hostname }} ({{ profile.os }})
+# =============================================================================
+
+echo "=== Easix provisioning started ==="
+
+# --- Alpine bootstrap ---
+echo "[STEP] Alpine bootstrap: enabling repositories..."
+ALPINE_VER=$(cat /etc/alpine-release | cut -d. -f1,2)
+cat > /etc/apk/repositories << REPOS
+https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/main
+https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/community
+REPOS
+echo "[STEP] Alpine bootstrap: updating index..."
+apk update
+echo "[STEP] Alpine bootstrap: installing bash..."
+apk add bash
+echo "[OK] Alpine bootstrap: done"
+{% else %}
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -7,35 +31,208 @@ set -euo pipefail
 # =============================================================================
 
 echo "=== Easix provisioning started ==="
+{% endif %}
 
+{% if not dis_system %}
 # --- Hostname ---
-echo "Setting hostname to {{ profile.hostname }}..."
+echo "[STEP] Hostname: setting to {{ profile.hostname }}..."
+{% if is_alpine %}
+echo "{{ profile.hostname }}" > /etc/hostname
+hostname "{{ profile.hostname }}"
+sed -i "s/127\.0\.1\.1.*/127.0.1.1\t{{ profile.hostname }}/" /etc/hosts || \
+    echo "127.0.1.1	{{ profile.hostname }}" >> /etc/hosts
+{% else %}
 hostnamectl set-hostname "{{ profile.hostname }}"
+{% endif %}
+echo "[OK] Hostname: {{ profile.hostname }}"
+
+# --- Locale ---
+{% if is_alpine %}
+echo "[STEP] Locale: setting environment to {{ profile.system.locale }} (musl — limited support)..."
+cat > /etc/profile.d/locale.sh << 'LOCALE_EOF'
+export LANG="{{ profile.system.locale }}"
+export LC_ALL="{{ profile.system.locale }}"
+LOCALE_EOF
+chmod +x /etc/profile.d/locale.sh
+{% else %}
+echo "[STEP] Locale: setting to {{ profile.system.locale }}..."
+locale-gen "{{ profile.system.locale }}" || true
+update-locale LANG="{{ profile.system.locale }}"
+{% endif %}
+echo "[OK] Locale: {{ profile.system.locale }}"
+
+# --- Timezone ---
+echo "[STEP] Timezone: setting to {{ profile.system.timezone }}..."
+{% if is_alpine %}
+apk add --quiet tzdata
+cp /usr/share/zoneinfo/{{ profile.system.timezone }} /etc/localtime
+echo "{{ profile.system.timezone }}" > /etc/timezone
+{% else %}
+timedatectl set-timezone "{{ profile.system.timezone }}"
+{% endif %}
+echo "[OK] Timezone: {{ profile.system.timezone }}"
+
+{% if profile.system.ntp %}
+# --- NTP ---
+{% if is_alpine %}
+echo "[STEP] NTP: installing chrony..."
+apk add --quiet chrony
+rc-update add chronyd default
+rc-service chronyd start || true
+{% else %}
+echo "[STEP] NTP: enabling time synchronization..."
+timedatectl set-ntp true
+{% endif %}
+echo "[OK] NTP: enabled"
+{% endif %}
+
+{% if profile.system.swap_mb %}
+# --- Swap ---
+echo "[STEP] Swap: creating {{ profile.system.swap_mb }}MB swap file..."
+if [ ! -f /swapfile ]; then
+{% if is_alpine %}
+    dd if=/dev/zero of=/swapfile bs=1M count={{ profile.system.swap_mb }} status=progress
+{% else %}
+    fallocate -l {{ profile.system.swap_mb }}M /swapfile
+{% endif %}
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    echo "[OK] Swap: {{ profile.system.swap_mb }}MB created"
+else
+    echo "[SKIP] Swap: /swapfile already exists"
+fi
+{% endif %}
+
+{% if profile.system.grub_timeout %}
+# --- Bootloader timeout ---
+{% if is_alpine %}
+echo "[STEP] Bootloader: setting timeout to {{ profile.system.grub_timeout }}..."
+if [ -f /etc/update-extlinux.conf ]; then
+    sed -i 's/^timeout=.*/timeout={{ profile.system.grub_timeout }}/' /etc/update-extlinux.conf
+    update-extlinux 2>/dev/null || true
+    echo "[OK] Bootloader: extlinux timeout set to {{ profile.system.grub_timeout }}"
+elif [ -f /etc/default/grub ]; then
+    sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT={{ profile.system.grub_timeout }}/' /etc/default/grub
+    grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || true
+    echo "[OK] Bootloader: GRUB timeout set to {{ profile.system.grub_timeout }}"
+else
+    echo "[SKIP] Bootloader: no extlinux or GRUB config found"
+fi
+{% else %}
+echo "[STEP] Bootloader: setting GRUB timeout to {{ profile.system.grub_timeout }}s..."
+sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT={{ profile.system.grub_timeout }}/' /etc/default/grub
+update-grub
+echo "[OK] Bootloader: GRUB timeout set to {{ profile.system.grub_timeout }}s"
+{% endif %}
+{% endif %}
+
+{% if profile.system.enable_tpm %}
+# --- TPM 2.0 ---
+echo "[STEP] TPM: installing tpm2 tools..."
+{% if is_alpine %}
+apk add --quiet tpm2-tools tpm2-tss
+{% else %}
+apt-get install -y -qq tpm2-tools tpm2-abrmd libtss2-dev
+{% endif %}
+modprobe tpm_tis || true
+modprobe tpm_crb || true
+if ! grep -q '^tpm_tis' /etc/modules 2>/dev/null; then
+    echo 'tpm_tis' >> /etc/modules
+fi
+if ! grep -q '^tpm_crb' /etc/modules 2>/dev/null; then
+    echo 'tpm_crb' >> /etc/modules
+fi
+{% if is_alpine %}
+rc-service tpm2-abrmd start 2>/dev/null || true
+rc-update add tpm2-abrmd default 2>/dev/null || true
+{% else %}
+systemctl enable tpm2-abrmd.service || true
+systemctl start tpm2-abrmd.service || true
+{% endif %}
+if [ -c /dev/tpm0 ] || [ -c /dev/tpmrm0 ]; then
+    echo "[OK] TPM: device detected, running self-test..."
+    tpm2_selftest --fulltest || true
+    tpm2_getcap properties-fixed 2>/dev/null | head -5 || true
+else
+    echo "[WARN] TPM: no device found (/dev/tpm0 or /dev/tpmrm0) — tools installed but hardware not available"
+fi
+{% endif %}
+{% endif %}
 
 # --- System update ---
-echo "Updating package lists..."
+{% if not is_alpine %}
+echo "[STEP] Packages: updating package lists..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-
-{% if profile.packages | length > 0 %}
-# --- Packages ---
-echo "Installing packages: {{ profile.packages | join(sep=", ") }}..."
-apt-get install -y -qq \
-  {{ profile.packages | join(sep=" \\\n  ") }}
+echo "[OK] Packages: lists updated"
 {% endif %}
 
+{% if not dis_packages %}
+{% if profile.packages | length > 0 %}
+# --- Software installation ---
+{% for item in profile.packages %}
+# --- {{ item.name }} ---
+echo "[STEP] Software: {{ item.name }}..."
+{% for cmd in item.commands %}
+{{ cmd }} || { echo "[ERROR] {{ item.name }}: step failed ({{ cmd }})"; exit 1; }
+{% endfor %}
+echo "[OK] Software: {{ item.name }}"
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if not dis_user %}
 # --- User ---
-echo "Configuring user '{{ profile.user.name }}'..."
+echo "[STEP] User: configuring '{{ profile.user.name }}'..."
 if ! id "{{ profile.user.name }}" &>/dev/null; then
+{% if is_alpine %}
+    adduser -D -s /bin/ash "{{ profile.user.name }}"
+{% else %}
     useradd -m -s /bin/bash "{{ profile.user.name }}"
+{% endif %}
+    echo "[OK] User: '{{ profile.user.name }}' created"
+else
+    echo "[SKIP] User: '{{ profile.user.name }}' already exists"
 fi
 {% if profile.user.sudo %}
+{% if is_alpine %}
+apk add --quiet sudo
+adduser "{{ profile.user.name }}" wheel 2>/dev/null || true
+sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
+echo "[OK] User: '{{ profile.user.name }}' added to wheel (sudo)"
+{% else %}
 usermod -aG sudo "{{ profile.user.name }}"
+echo "[OK] User: '{{ profile.user.name }}' added to sudo group"
+{% endif %}
+{% endif %}
 {% endif %}
 
+{% if not dis_network %}
 {% if profile.network.mode == "static" and profile.network.address %}
 # --- Network (static) ---
-echo "Configuring static network..."
+echo "[STEP] Network: configuring static IP {{ profile.network.address }}..."
+{% if is_alpine %}
+cat > /etc/network/interfaces << 'NETCFG'
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address {{ profile.network.address }}
+{% if profile.network.gateway %}
+    gateway {{ profile.network.gateway }}
+{% endif %}
+{% if profile.network.dns %}
+    dns-nameservers {{ profile.network.dns }}
+{% endif %}
+NETCFG
+{% if profile.network.dns %}
+echo "nameserver {{ profile.network.dns }}" > /etc/resolv.conf
+{% endif %}
+rc-service networking restart || true
+{% else %}
 cat > /etc/netplan/01-easix.yaml << 'NETPLAN'
 network:
   version: 2
@@ -56,31 +253,71 @@ network:
 NETPLAN
 netplan apply || true
 {% endif %}
+echo "[OK] Network: static IP configured"
+{% endif %}
+{% endif %}
 
+{% if not dis_security %}
 {% if profile.security.ufw %}
 # --- Firewall ---
-echo "Enabling UFW firewall..."
+{% if is_alpine %}
+echo "[STEP] Firewall: installing and configuring iptables..."
+apk add --quiet iptables ip6tables
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+rc-update add iptables default
+/etc/init.d/iptables save
+echo "[OK] Firewall: iptables enabled (INPUT: DROP, SSH: ACCEPT)"
+{% else %}
+echo "[STEP] Firewall: installing and enabling UFW..."
 apt-get install -y -qq ufw
 ufw --force enable
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow ssh
+echo "[OK] Firewall: UFW enabled (deny incoming, allow SSH)"
+{% endif %}
 {% endif %}
 
 {% if profile.security.ssh_key %}
 # --- SSH key ---
-echo "Deploying SSH key for {{ profile.user.name }}..."
+echo "[STEP] SSH key: deploying for {{ profile.user.name }}..."
 USER_HOME=$(eval echo "~{{ profile.user.name }}")
 mkdir -p "$USER_HOME/.ssh"
 echo "{{ profile.security.ssh_key }}" >> "$USER_HOME/.ssh/authorized_keys"
 chmod 700 "$USER_HOME/.ssh"
 chmod 600 "$USER_HOME/.ssh/authorized_keys"
 chown -R "{{ profile.user.name }}:{{ profile.user.name }}" "$USER_HOME/.ssh"
+echo "[OK] SSH key: deployed to $USER_HOME/.ssh/authorized_keys"
+{% endif %}
 {% endif %}
 
+{% if not dis_autostart %}
 {% if profile.autostart %}
-# --- Autostart (legacy) ---
-echo "Configuring autostart service..."
+# --- Autostart ---
+{% if is_alpine %}
+echo "[STEP] Autostart: creating OpenRC service 'easix-autostart'..."
+cat > /etc/init.d/easix-autostart << 'INITSCRIPT'
+#!/sbin/openrc-run
+
+name="easix-autostart"
+description="Easix autostart"
+command="{{ profile.autostart }}"
+command_background="no"
+
+depend() {
+    need net
+}
+INITSCRIPT
+chmod +x /etc/init.d/easix-autostart
+rc-update add easix-autostart default
+echo "[OK] Autostart: 'easix-autostart' added to OpenRC default runlevel"
+{% else %}
+echo "[STEP] Autostart: creating systemd service 'easix-autostart'..."
 cat > /etc/systemd/system/easix-autostart.service << 'UNIT'
 [Unit]
 Description=Easix autostart
@@ -96,27 +333,48 @@ WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
 systemctl enable easix-autostart.service
+echo "[OK] Autostart: 'easix-autostart' enabled in systemd"
+{% endif %}
+{% endif %}
 {% endif %}
 
 {% for script in profile.custom_scripts %}
 {% if script.mode == "run_once" %}
 # --- Custom script: {{ script.name }} (run once) ---
-echo "Running custom script '{{ script.name }}'..."
+echo "[STEP] Script '{{ script.name }}': executing (run_once)..."
 cat > /tmp/easix-custom-{{ script.name }}.sh << 'EASIX_SCRIPT_{{ loop.index }}'
 {{ script.content }}
 EASIX_SCRIPT_{{ loop.index }}
 chmod +x /tmp/easix-custom-{{ script.name }}.sh
-bash /tmp/easix-custom-{{ script.name }}.sh
+/tmp/easix-custom-{{ script.name }}.sh
 rm -f /tmp/easix-custom-{{ script.name }}.sh
+echo "[OK] Script '{{ script.name }}': executed and removed"
 {% elif script.mode == "autostart" %}
 # --- Custom script: {{ script.name }} (autostart) ---
-echo "Installing autostart script '{{ script.name }}'..."
+echo "[STEP] Script '{{ script.name }}': installing as autostart service..."
 mkdir -p /opt/easix/scripts
 cat > /opt/easix/scripts/{{ script.name }}.sh << 'EASIX_SCRIPT_{{ loop.index }}'
 {{ script.content }}
 EASIX_SCRIPT_{{ loop.index }}
 chmod +x /opt/easix/scripts/{{ script.name }}.sh
 
+{% if is_alpine %}
+cat > /etc/init.d/easix-{{ script.name }} << 'EASIX_INITD_{{ loop.index }}'
+#!/sbin/openrc-run
+
+name="easix-{{ script.name }}"
+description="Easix custom: {{ script.name }}"
+command="/opt/easix/scripts/{{ script.name }}.sh"
+command_background="no"
+
+depend() {
+    need net
+}
+EASIX_INITD_{{ loop.index }}
+chmod +x /etc/init.d/easix-{{ script.name }}
+rc-update add easix-{{ script.name }} default
+echo "[OK] Script '{{ script.name }}': installed to /opt/easix/scripts/, OpenRC service 'easix-{{ script.name }}' added to default runlevel"
+{% else %}
 cat > /etc/systemd/system/easix-{{ script.name }}.service << 'EASIX_UNIT_{{ loop.index }}'
 [Unit]
 Description=Easix custom: {{ script.name }}
@@ -132,6 +390,8 @@ WantedBy=multi-user.target
 EASIX_UNIT_{{ loop.index }}
 systemctl daemon-reload
 systemctl enable easix-{{ script.name }}.service
+echo "[OK] Script '{{ script.name }}': installed to /opt/easix/scripts/, systemd service 'easix-{{ script.name }}' enabled"
+{% endif %}
 {% endif %}
 {% endfor %}
 
