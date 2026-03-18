@@ -4,7 +4,7 @@
 mod commands;
 mod models;
 
-use commands::{deploy, generator, profiles};
+use commands::{deploy, devices, generator, profiles};
 
 fn main() {
     tauri::Builder::default()
@@ -17,10 +17,16 @@ fn main() {
             profiles::delete_profile,
             profiles::duplicate_profile,
             profiles::rename_profile,
+            profiles::export_profile_esx,
+            profiles::import_profile_esx,
             generator::generate_script,
             generator::validate_script,
             generator::export_script,
+            generator::dry_run_script,
             deploy::deploy_ssh,
+            devices::list_devices,
+            devices::save_device,
+            devices::delete_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use tauri::command;
+use tauri_plugin_dialog::DialogExt;
 
 use crate::models::Profile;
 
@@ -86,4 +87,76 @@ pub fn rename_profile(old_name: String, new_name: String) -> Result<(), String> 
         return Err(format!("Profile '{new_name}' already exists"));
     }
     fs::rename(&old_path, &new_path).map_err(|e| format!("Cannot rename: {e}"))
+}
+
+#[command]
+pub async fn export_profile_esx(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<Option<String>, String> {
+    let dir = profiles_dir()?;
+    let path = dir.join(format!("{name}.json"));
+    if !path.exists() {
+        return Err(format!("Profile '{name}' not found"));
+    }
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+
+    let save_path = app
+        .dialog()
+        .file()
+        .set_file_name(&format!("{name}.esx"))
+        .add_filter("Easix Profile", &["esx"])
+        .blocking_save_file();
+
+    match save_path {
+        Some(p) => {
+            let file_path = p.as_path().ok_or("Invalid path")?;
+            fs::write(file_path, &content)
+                .map_err(|e| format!("Cannot write file: {e}"))?;
+            Ok(Some(file_path.to_string_lossy().to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+#[command]
+pub async fn import_profile_esx(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let open_path = app
+        .dialog()
+        .file()
+        .add_filter("Easix Profile", &["esx"])
+        .blocking_pick_file();
+
+    let file_path = match open_path {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let file_path = file_path.as_path().ok_or("Invalid path")?;
+    let content = fs::read_to_string(file_path).map_err(|e| format!("Cannot read file: {e}"))?;
+
+    // Validate it parses as a Profile
+    let profile: Profile = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid .esx file: {e}"))?;
+
+    // Derive name from filename
+    let stem = file_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("imported");
+
+    // Save, appending _N if name already taken
+    let dir = profiles_dir()?;
+    let mut target_name = stem.to_string();
+    let mut suffix = 1u32;
+    while dir.join(format!("{target_name}.json")).exists() {
+        target_name = format!("{stem}_{suffix:02}");
+        suffix += 1;
+    }
+
+    let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+    fs::write(dir.join(format!("{target_name}.json")), json)
+        .map_err(|e| format!("Cannot save profile: {e}"))?;
+
+    Ok(Some(target_name))
 }

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Profile } from "./types";
+import { Device, Profile } from "./types";
 
 export const api = {
   listProfiles: () => invoke<string[]>("list_profiles"),
@@ -25,6 +25,20 @@ export const api = {
 
   exportScript: (script: string, defaultName: string) =>
     invoke<string | null>("export_script", { script, defaultName }),
+
+  listDevices: () => invoke<Device[]>("list_devices"),
+
+  saveDevice: (device: Device) => invoke<void>("save_device", { device }),
+
+  deleteDevice: (id: string) => invoke<void>("delete_device", { id }),
+
+  exportProfileEsx: (name: string) =>
+    invoke<string | null>("export_profile_esx", { name }),
+
+  importProfileEsx: () => invoke<string | null>("import_profile_esx"),
+
+  dryRunScript: (script: string) =>
+    invoke<string>("dry_run_script", { script }),
 
   deploySsh: (data: {
     profile: Profile;

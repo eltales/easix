@@ -74,6 +74,31 @@ Wszystkie poprzednie zadania implementacyjne zostały zrealizowane.
 
 ---
 
+### TASK-015: Dry run (shellcheck)
+- Status: done
+- Modified files: src-tauri/src/commands/generator.rs, src/api.ts, src/pages/Preview.tsx, setup.sh
+- Wynik: przycisk "Dry Run (shellcheck)" w Preview, wynik w inline panelu, setup.sh sprawdza shellcheck
+
+### TASK-016: Zarządzanie urządzeniami (Devices)
+- Status: done
+- Modified files: src-tauri/src/models.rs, src-tauri/src/commands/devices.rs (nowy), src-tauri/src/commands/mod.rs, src-tauri/src/main.rs, src/types.ts, src/api.ts, src/pages/Devices.tsx (nowy), src/App.tsx, src/components/Layout.tsx
+- Wynik: pełny CRUD urządzeń SSH, storage: ~/.config/easix/devices/
+
+### TASK-017: Historia deployów z urządzeniem
+- Status: done
+- Modified files: src/pages/Deploy.tsx
+- Wynik: dropdown "Saved Device" wypełnia pola formularza, historia pokazuje nazwę urządzenia (badge)
+
+### TASK-018: Batch deploy
+- Status: done
+- Modified files: src/pages/BatchDeploy.tsx (nowy), src/pages/Deploy.tsx
+- Wynik: modal z wyborem profilu + do 10 urządzeń, deploy kolejno z progress per urządzenie
+
+### TASK-019: Import/Export .esx
+- Status: done
+- Modified files: src-tauri/src/commands/profiles.rs, src-tauri/src/main.rs, src/api.ts, src/pages/Dashboard.tsx
+- Wynik: Export (ikona download na karcie) + Import .esx (przycisk w headerze), format JSON z rozszerzeniem .esx
+
 ### TASK-014: Software redesign — SoftwareItem z wieloma komendami
 - Status: done
 - Modified files: src-tauri/src/models.rs, src-tauri/templates/provision.sh.tera, src/types.ts, src/pages/Editor.tsx, src-tauri/src/commands/generator.rs
@@ -152,3 +177,139 @@ Mitygacja: dodać fallback deserializatora który konwertuje `String` → `Softw
 
 ## Analysis
 *(puste — wypełniane przy decyzjach architektonicznych)*
+
+---
+
+## Proposed Plan — TASK-015 do TASK-019
+
+*Dodano: 2026-03-18*
+
+### Zakres prac (4 funkcje)
+
+---
+
+### TASK-015: Dry run (shellcheck)
+
+**Cel:** przycisk "Dry Run" w Preview.tsx uruchamia shellcheck na wygenerowanym skrypcie i pokazuje wynik.
+
+**Założenia:**
+- `shellcheck` musi być zainstalowany na systemie (dodamy check w setup.sh)
+- Skrypt zapisywany do temp pliku, shellcheck go analizuje, wynik zwracany jako string
+- Jeśli shellcheck nie istnieje → czytelny komunikat błędu
+
+**Pliki:**
+- `src-tauri/src/commands/generator.rs` — nowa komenda `dry_run_script(script: String)`
+- `src/api.ts` — wrapper `dryRunScript()`
+- `src/pages/Preview.tsx` — przycisk "Dry Run" + modal z wynikiem
+- `setup.sh` — dodanie shellcheck do listy wymagań
+
+**Czego NIE zmieniam:** modele, szablony, inne strony
+
+---
+
+### TASK-016: Zarządzanie urządzeniami (Devices)
+
+**Cel:** użytkownik zapisuje dane SSH maszyn (jak profile), wybiera z listy przy deploy zamiast wpisywać ręcznie.
+
+**Model Device:**
+```
+Device {
+  id: String (UUID),
+  name: String,        // "Lab PC 01"
+  host: String,        // IP lub hostname
+  port: u16,           // default 22
+  username: String,
+  auth_type: String,   // "password" | "key"
+  key_path: Option<String>,
+}
+```
+
+**Storage:** `~/.config/easix/devices/` — jeden plik JSON per urządzenie (analogicznie do profili)
+
+**Pliki:**
+- `src-tauri/src/models.rs` — nowa struct `Device`
+- `src-tauri/src/commands/devices.rs` — nowy plik: `list_devices`, `save_device`, `delete_device`
+- `src-tauri/src/main.rs` — rejestracja nowych komend
+- `src/types.ts` — interface `Device`
+- `src/api.ts` — wrappery
+- `src/pages/Devices.tsx` — nowa strona (CRUD urządzeń, analogiczna do Dashboard)
+- `src/App.tsx` — routing do /devices
+- `src/components/Layout.tsx` — link w sidebarze
+
+---
+
+### TASK-017: Historia deployów (z urządzeniem)
+
+**Cel:** każdy deploy zapisuje wpis historii z informacją o urządzeniu, profilu, czasie, wyniku.
+
+**Model HistoryEntry:**
+```
+{
+  id: String,
+  timestamp: String,    // ISO 8601
+  profile_name: String,
+  device_id: Option<String>,   // jeśli wybrano z listy
+  device_host: String,         // zawsze zapisany dla historii
+  success: bool,
+  output_snippet: String,      // pierwsze N znaków outputu
+}
+```
+
+**Storage:** localStorage (już używany) — rozszerzenie istniejącej struktury
+
+**Pliki:**
+- `src/pages/Deploy.tsx` — selektor urządzenia (dropdown z listy devices + manualne dane), zapis historii z device_id
+- `src/types.ts` — interface `HistoryEntry` zaktualizowany
+
+---
+
+### TASK-018: Batch deploy
+
+**Cel:** przycisk "Batch Deploy" w Deploy.tsx otwiera nowe okno, wybór profilu + do 10 urządzeń, "Batch Deploy Now" deployuje kolejno.
+
+**UI:**
+- Przycisk "Batch Deploy" obok "Deploy Now" w Deploy.tsx
+- Nowy komponent `BatchDeploy.tsx` (modal lub osobna strona)
+- Selektor profilu (dropdown)
+- Lista do 10 urządzeń — wybieranych z zapisanych Devices lub wpisywanych ręcznie
+- "Batch Deploy Now" → deploy kolejno, progress bar per urządzenie (✓/✗)
+
+**Pliki:**
+- `src/pages/BatchDeploy.tsx` — nowy komponent
+- `src/pages/Deploy.tsx` — przycisk otwierający BatchDeploy
+- `src/api.ts` — reuse `deployProfile`
+
+**Czego NIE zmieniam:** backend deploy — reużywamy istniejącej komendy `deploy_profile`
+
+---
+
+### TASK-019: Import/Export profili (.esx)
+
+**Cel:** eksport profilu jako plik `{name}.esx` (JSON), import z pliku .esx do listy profili.
+
+**Format:** zwykły JSON (identyczny z profilem), rozszerzenie `.esx`
+
+**UI:**
+- Dashboard.tsx: przycisk "Export" na karcie profilu → native save dialog → `{name}.esx`
+- Dashboard.tsx: przycisk "Import .esx" → native open dialog → wczytaj → zapisz jako nowy profil
+
+**Pliki:**
+- `src-tauri/src/commands/profiles.rs` — dwie nowe komendy: `export_profile_esx`, `import_profile_esx`
+- `src/api.ts` — wrappery
+- `src/pages/Dashboard.tsx` — przyciski Export/Import
+
+---
+
+### Kolejność implementacji
+
+1. TASK-016 (Devices) — bo TASK-017 i TASK-018 od niego zależą
+2. TASK-017 (Historia) — rozszerza Deploy o device selector
+3. TASK-018 (Batch deploy) — używa Devices
+4. TASK-019 (Import/Export) — niezależne, najprostrze
+5. TASK-015 (Dry run) — niezależne
+
+### Ryzyka
+
+- TASK-016: devices.rs to nowy plik komend — trzeba zadbać o rejestrację w main.rs
+- TASK-018: sequential deploy może trwać długo — UI musi być responsywny (async per urządzenie)
+- TASK-015: shellcheck może nie być zainstalowany — trzeba graceful fallback

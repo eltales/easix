@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import Editor from "./pages/Editor";
 import Preview from "./pages/Preview";
 import Deploy from "./pages/Deploy";
+import Devices from "./pages/Devices";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/editor/:name" element={<Editor />} />
         <Route path="/preview" element={<Preview />} />
         <Route path="/deploy" element={<Deploy />} />
+        <Route path="/devices" element={<Devices />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

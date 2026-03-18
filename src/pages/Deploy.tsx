@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { Device } from "../types";
+import BatchDeploy from "./BatchDeploy";
 
 interface DeployEntry {
   profile: string;
+  device_name?: string;
   host: string;
   port: string;
   username: string;
@@ -34,7 +37,9 @@ function saveHistory(entries: DeployEntry[]) {
 
 export default function Deploy() {
   const [profiles, setProfiles] = useState<string[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [selected, setSelected] = usePersistedState("easix_deploy_profile", "");
+  const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [host, setHost] = usePersistedState("easix_deploy_host", "");
   const [port, setPort] = usePersistedState("easix_deploy_port", "22");
   const [username, setUsername] = usePersistedState("easix_deploy_user", "root");
@@ -45,20 +50,33 @@ export default function Deploy() {
   const [error, setError] = useState("");
   const [history, setHistory] = useState<DeployEntry[]>(loadHistory);
   const [expandedEntry, setExpandedEntry] = useState<number | null>(null);
+  const [showBatch, setShowBatch] = useState(false);
 
   useEffect(() => {
     api.listProfiles().then(setProfiles);
+    api.listDevices().then(setDevices);
   }, []);
 
-  const sanitizeHost = (v: string) => v.replace(/[^0-9.:\[\]]/g, "");
+  const sanitizeHost = (v: string) => v.replace(/[^0-9.:\[\]a-zA-Z-]/g, "");
   const sanitizePort = (v: string) => v.replace(/\D/g, "").slice(0, 5);
+
+  const applyDevice = (deviceId: string) => {
+    setSelectedDevice(deviceId);
+    if (!deviceId) return;
+    const d = devices.find((d) => d.id === deviceId);
+    if (!d) return;
+    setHost(d.host);
+    setPort(String(d.port));
+    setUsername(d.username);
+    if (d.auth_type === "key" && d.key_path) {
+      setKeyPath(d.key_path);
+      setPassword("");
+    }
+  };
 
   const handleDeploy = async () => {
     if (!selected) return setError("Select a profile");
     if (!host.trim()) return setError("Host is required");
-    if (!/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/.test(host.trim()) && !/^\[?[0-9a-fA-F:]+\]?$/.test(host.trim())) {
-      return setError("Host must be a valid IP address (e.g. 192.168.1.50)");
-    }
     const portNum = parseInt(port) || 22;
     if (portNum < 1 || portNum > 65535) return setError("Port must be between 1 and 65535");
     setError("");
@@ -83,8 +101,10 @@ export default function Deploy() {
       setError(result);
     } finally {
       setDeploying(false);
+      const deviceName = devices.find((d) => d.id === selectedDevice)?.name;
       const entry: DeployEntry = {
         profile: selected,
+        device_name: deviceName,
         host: host.trim(),
         port,
         username: username || "root",
@@ -123,16 +143,36 @@ export default function Deploy() {
           </select>
         </div>
 
+        {devices.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Saved Device <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <select
+              value={selectedDevice}
+              onChange={(e) => applyDevice(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+            >
+              <option value="">-- Enter manually --</option>
+              {devices.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.username}@{d.host}:{d.port})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Host (IP)</label>
             <input
               value={host}
-              onChange={(e) => setHost(sanitizeHost(e.target.value))}
+              onChange={(e) => { setSelectedDevice(""); setHost(sanitizeHost(e.target.value)); }}
               onPaste={(e) => {
                 e.preventDefault();
-                const pasted = e.clipboardData.getData("text").trim();
-                setHost(sanitizeHost(pasted));
+                setSelectedDevice("");
+                setHost(sanitizeHost(e.clipboardData.getData("text").trim()));
               }}
               placeholder="192.168.1.50"
               inputMode="decimal"
@@ -180,13 +220,21 @@ export default function Deploy() {
           />
         </div>
 
-        <button
-          onClick={handleDeploy}
-          disabled={deploying}
-          className="w-full py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
-        >
-          {deploying ? "Deploying..." : "Deploy Now"}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={handleDeploy}
+            disabled={deploying}
+            className="flex-1 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+          >
+            {deploying ? "Deploying..." : "Deploy Now"}
+          </button>
+          <button
+            onClick={() => setShowBatch(true)}
+            className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+          >
+            Batch Deploy
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-red-50 text-red-700 p-4 rounded-md mb-4">{error}</div>}
@@ -221,6 +269,9 @@ export default function Deploy() {
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`flex-shrink-0 w-2 h-2 rounded-full ${entry.success ? "bg-green-500" : "bg-red-500"}`} />
                     <span className="text-sm font-medium truncate">{entry.profile}</span>
+                    {entry.device_name && (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{entry.device_name}</span>
+                    )}
                     <span className="text-xs text-gray-400 font-mono">{entry.username}@{entry.host}:{entry.port}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
@@ -239,6 +290,14 @@ export default function Deploy() {
             ))}
           </div>
         </div>
+      )}
+
+      {showBatch && (
+        <BatchDeploy
+          profiles={profiles}
+          devices={devices}
+          onClose={() => setShowBatch(false)}
+        />
       )}
     </div>
   );

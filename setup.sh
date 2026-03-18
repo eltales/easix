@@ -35,9 +35,10 @@ echo ""
 echo "=== Easix — requirements check ==="
 echo ""
 echo "Tools:"
-check_tool "Node.js (node)" "node"
-check_tool "npm"            "npm"
-check_tool "Rust (cargo)"   "cargo"
+check_tool "Node.js (node)"       "node"
+check_tool "npm"                  "npm"
+check_tool "Rust (cargo)"         "cargo"
+check_tool "shellcheck (dry run)" "shellcheck"
 
 # --- System packages ---
 if $IS_DEBIAN; then
@@ -135,6 +136,18 @@ if printf '%s\0' "${MISSING_TOOLS[@]}" | grep -qz "Rust"; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
     source "$HOME/.cargo/env"
     echo "[OK]      Rust installed"
+fi
+
+# --- Install shellcheck ---
+if printf '%s\0' "${MISSING_TOOLS[@]}" | grep -qz "shellcheck"; then
+    if $IS_DEBIAN; then
+        echo "[INSTALL] shellcheck..."
+        sudo apt-get install -y shellcheck
+    elif $IS_ALPINE; then
+        echo "[INSTALL] shellcheck..."
+        sudo apk add --quiet shellcheck
+    fi
+    echo "[OK]      shellcheck installed"
 fi
 
 # --- Install Node.js ---

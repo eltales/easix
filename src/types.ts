@@ -35,6 +35,16 @@ export interface SoftwareItem {
   commands: string[];
 }
 
+export interface Device {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth_type: "password" | "key";
+  key_path?: string;
+}
+
 export interface Profile {
   os: "debian11" | "ubuntu2204" | "ubuntu2404" | "alpine318";
   hostname: string;

@@ -1,5 +1,7 @@
+use std::io::Write;
 use tauri::command;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_shell::ShellExt;
 use tera::{Context, Tera};
 
 use crate::models::Profile;
@@ -78,6 +80,37 @@ pub async fn export_script(
             Ok(Some(file_path.to_string_lossy().to_string()))
         }
         None => Ok(None),
+    }
+}
+
+#[command]
+pub async fn dry_run_script(app: tauri::AppHandle, script: String) -> Result<String, String> {
+    // Write script to a temp file
+    let tmp_path = std::env::temp_dir().join("easix_dryrun.sh");
+    {
+        let mut f = std::fs::File::create(&tmp_path)
+            .map_err(|e| format!("Cannot create temp file: {e}"))?;
+        f.write_all(script.as_bytes())
+            .map_err(|e| format!("Cannot write temp file: {e}"))?;
+    }
+
+    let output = app
+        .shell()
+        .command("shellcheck")
+        .args(["--severity=warning", "--format=tty", tmp_path.to_str().unwrap_or("/tmp/easix_dryrun.sh")])
+        .output()
+        .await
+        .map_err(|e| format!("shellcheck not found or failed to run: {e}\n\nInstall with: apt-get install shellcheck"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        Ok("shellcheck: no issues found".to_string())
+    } else if !stdout.is_empty() {
+        Ok(stdout)
+    } else {
+        Ok(stderr)
     }
 }
 

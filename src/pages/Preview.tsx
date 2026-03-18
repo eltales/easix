@@ -12,6 +12,8 @@ export default function Preview() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [dryRunResult, setDryRunResult] = useState<string | null>(null);
+  const [dryRunning, setDryRunning] = useState(false);
 
   useEffect(() => {
     api.listProfiles().then((list) => {
@@ -63,6 +65,20 @@ export default function Preview() {
     navigator.clipboard.writeText(script);
   };
 
+  const handleDryRun = async () => {
+    if (!script) return;
+    setDryRunning(true);
+    setDryRunResult(null);
+    try {
+      const result = await api.dryRunScript(script);
+      setDryRunResult(result);
+    } catch (e) {
+      setDryRunResult(String(e));
+    } finally {
+      setDryRunning(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -111,7 +127,7 @@ export default function Preview() {
             </div>
           )}
 
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2 mb-3 flex-wrap">
             <button
               onClick={handleCopy}
               className="px-3 py-1.5 text-sm bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
@@ -125,6 +141,13 @@ export default function Preview() {
               Save as .sh
             </button>
             <button
+              onClick={handleDryRun}
+              disabled={dryRunning}
+              className="px-3 py-1.5 text-sm bg-amber-500 text-white rounded-md hover:bg-amber-600 disabled:opacity-50 transition-colors"
+            >
+              {dryRunning ? "Running..." : "Dry Run (shellcheck)"}
+            </button>
+            <button
               onClick={() => {
                 sessionStorage.setItem("easix_deploy_profile", selected);
                 navigate("/deploy");
@@ -134,6 +157,18 @@ export default function Preview() {
               Deploy via SSH
             </button>
           </div>
+
+          {dryRunResult !== null && (
+            <div className={`mb-4 rounded-lg border p-4 ${dryRunResult === "shellcheck: no issues found" ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className={`text-sm font-medium ${dryRunResult === "shellcheck: no issues found" ? "text-green-800" : "text-amber-800"}`}>
+                  Dry Run Result
+                </h4>
+                <button onClick={() => setDryRunResult(null)} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
+              </div>
+              <pre className="text-xs font-mono whitespace-pre-wrap text-gray-800">{dryRunResult}</pre>
+            </div>
+          )}
 
           <pre className="bg-gray-900 text-gray-100 p-5 rounded-lg text-sm overflow-auto max-h-[60vh] font-mono leading-relaxed">
             {script}

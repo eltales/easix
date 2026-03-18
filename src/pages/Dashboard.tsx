@@ -55,6 +55,23 @@ export default function Dashboard() {
     }
   };
 
+  const handleExport = async (name: string) => {
+    try {
+      await api.exportProfileEsx(name);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const imported = await api.importProfileEsx();
+      if (imported) load();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const handleDuplicate = async (name: string) => {
     try {
       const existing = await api.listProfiles();
@@ -78,12 +95,20 @@ export default function Dashboard() {
           <h2 className="text-2xl font-bold">Dashboard</h2>
           <p className="text-gray-500 mt-1">Manage configuration profiles</p>
         </div>
-        <button
-          onClick={() => navigate("/editor")}
-          className="bg-primary-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-primary-700 transition-colors"
-        >
-          + New Profile
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleImport}
+            className="border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Import .esx
+          </button>
+          <button
+            onClick={() => navigate("/editor")}
+            className="bg-primary-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-primary-700 transition-colors"
+          >
+            + New Profile
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -121,6 +146,16 @@ export default function Dashboard() {
                   className="p-2 text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 hover:text-gray-700 transition-colors"
                 >
                   <IconDuplicate />
+                </button>
+                <button
+                  onClick={() => handleExport(name)}
+                  title="Export .esx"
+                  className="p-2 text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                    <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                  </svg>
                 </button>
                 <button
                   onClick={() => {

@@ -5,6 +5,7 @@ const links = [
   { to: "/editor", label: "Editor" },
   { to: "/preview", label: "Preview" },
   { to: "/deploy", label: "Deploy" },
+  { to: "/devices", label: "Devices" },
 ];
 
 export default function Layout() {
