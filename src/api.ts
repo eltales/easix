@@ -32,6 +32,9 @@ export const api = {
 
   deleteDevice: (id: string) => invoke<void>("delete_device", { id }),
 
+  connectDevice: (host: string, port: number, username: string) =>
+    invoke<void>("connect_device", { host, port, username }),
+
   exportProfileEsx: (name: string) =>
     invoke<string | null>("export_profile_esx", { name }),
 

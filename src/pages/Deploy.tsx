@@ -1,9 +1,21 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Device } from "../types";
-import BatchDeploy from "./BatchDeploy";
 
-interface DeployEntry {
+interface DeployTarget {
+  id: string;
+  profile: string;
+  device_id: string;
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+  key_path: string;
+  status: "idle" | "running" | "ok" | "error";
+  output: string;
+}
+
+interface HistoryEntry {
   profile: string;
   device_name?: string;
   host: string;
@@ -14,108 +26,125 @@ interface DeployEntry {
   output: string;
 }
 
-function usePersistedState(key: string, initial: string): [string, (v: string) => void] {
-  const [value, setValue] = useState(() => sessionStorage.getItem(key) ?? initial);
-  const set = (v: string) => {
-    setValue(v);
-    sessionStorage.setItem(key, v);
+function makeTarget(): DeployTarget {
+  return {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    profile: "",
+    device_id: "",
+    host: "",
+    port: "22",
+    username: "root",
+    password: "",
+    key_path: "",
+    status: "idle",
+    output: "",
   };
-  return [value, set];
 }
 
-function loadHistory(): DeployEntry[] {
-  try {
-    return JSON.parse(localStorage.getItem("easix_deploy_history") || "[]");
-  } catch {
-    return [];
-  }
+function loadHistory(): HistoryEntry[] {
+  try { return JSON.parse(localStorage.getItem("easix_deploy_history") || "[]"); }
+  catch { return []; }
 }
 
-function saveHistory(entries: DeployEntry[]) {
+function saveHistory(entries: HistoryEntry[]) {
   localStorage.setItem("easix_deploy_history", JSON.stringify(entries.slice(0, 50)));
 }
 
 export default function Deploy() {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [selected, setSelected] = usePersistedState("easix_deploy_profile", "");
-  const [selectedDevice, setSelectedDevice] = useState<string>("");
-  const [host, setHost] = usePersistedState("easix_deploy_host", "");
-  const [port, setPort] = usePersistedState("easix_deploy_port", "22");
-  const [username, setUsername] = usePersistedState("easix_deploy_user", "root");
-  const [password, setPassword] = usePersistedState("easix_deploy_pass", "");
-  const [keyPath, setKeyPath] = usePersistedState("easix_deploy_key", "");
-  const [output, setOutput] = useState("");
+  const [targets, setTargets] = useState<DeployTarget[]>([makeTarget()]);
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState("");
-  const [history, setHistory] = useState<DeployEntry[]>(loadHistory);
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [expandedEntry, setExpandedEntry] = useState<number | null>(null);
-  const [showBatch, setShowBatch] = useState(false);
 
   useEffect(() => {
     api.listProfiles().then(setProfiles);
     api.listDevices().then(setDevices);
   }, []);
 
-  const sanitizeHost = (v: string) => v.replace(/[^0-9.:\[\]a-zA-Z-]/g, "");
-  const sanitizePort = (v: string) => v.replace(/\D/g, "").slice(0, 5);
+  const deviceById = (id: string) => devices.find((d) => d.id === id);
 
-  const applyDevice = (deviceId: string) => {
-    setSelectedDevice(deviceId);
-    if (!deviceId) return;
-    const d = devices.find((d) => d.id === deviceId);
-    if (!d) return;
-    setHost(d.host);
-    setPort(String(d.port));
-    setUsername(d.username);
-    if (d.auth_type === "key" && d.key_path) {
-      setKeyPath(d.key_path);
-      setPassword("");
-    }
+  const updateTarget = (id: string, patch: Partial<DeployTarget>) => {
+    setTargets((prev) => prev.map((t) => t.id === id ? { ...t, ...patch } : t));
   };
 
+  const applyDevice = (targetId: string, deviceId: string) => {
+    const d = deviceById(deviceId);
+    updateTarget(targetId, {
+      device_id: deviceId,
+      host: d?.host ?? "",
+      port: String(d?.port ?? 22),
+      username: d?.username ?? "root",
+      key_path: d?.auth_type === "key" ? (d.key_path ?? "") : "",
+      password: "",
+    });
+  };
+
+  const addTarget = () => {
+    if (targets.length >= 10) return;
+    const last = targets[targets.length - 1];
+    const next = makeTarget();
+    // Pre-fill profile from previous row
+    next.profile = last.profile;
+    setTargets((prev) => [...prev, next]);
+  };
+
+  const removeTarget = (id: string) => {
+    setTargets((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const isBatch = targets.length > 1;
+
   const handleDeploy = async () => {
-    if (!selected) return setError("Select a profile");
-    if (!host.trim()) return setError("Host is required");
-    const portNum = parseInt(port) || 22;
-    if (portNum < 1 || portNum > 65535) return setError("Port must be between 1 and 65535");
+    for (const t of targets) {
+      if (!t.profile) return setError("Every row needs a profile");
+      if (!t.host.trim()) return setError("Every row needs a host");
+    }
     setError("");
-    setOutput("");
     setDeploying(true);
-    let success = false;
-    let result = "";
-    try {
-      const profile = await api.getProfile(selected);
-      result = await api.deploySsh({
-        profile,
-        host: host.trim(),
-        port: portNum,
-        username: username || "root",
-        password: password || undefined,
-        keyPath: keyPath || undefined,
-      });
-      setOutput(result);
-      success = true;
-    } catch (e) {
-      result = String(e);
-      setError(result);
-    } finally {
-      setDeploying(false);
-      const deviceName = devices.find((d) => d.id === selectedDevice)?.name;
-      const entry: DeployEntry = {
-        profile: selected,
-        device_name: deviceName,
-        host: host.trim(),
-        port,
-        username: username || "root",
+
+    const newHistory: HistoryEntry[] = [];
+
+    for (const target of targets) {
+      updateTarget(target.id, { status: "running", output: "" });
+      const portNum = parseInt(target.port) || 22;
+      let success = false;
+      let result = "";
+      try {
+        const profile = await api.getProfile(target.profile);
+        result = await api.deploySsh({
+          profile,
+          host: target.host.trim(),
+          port: portNum,
+          username: target.username || "root",
+          password: target.password || undefined,
+          keyPath: target.key_path || undefined,
+        });
+        updateTarget(target.id, { status: "ok", output: result });
+        success = true;
+      } catch (e) {
+        result = String(e);
+        updateTarget(target.id, { status: "error", output: result });
+      }
+      const d = deviceById(target.device_id);
+      newHistory.push({
+        profile: target.profile,
+        device_name: d?.name,
+        host: target.host.trim(),
+        port: target.port,
+        username: target.username || "root",
         date: new Date().toLocaleString(),
         success,
         output: result,
-      };
-      const updated = [entry, ...history];
-      setHistory(updated);
-      saveHistory(updated);
+      });
     }
+
+    const updated = [...newHistory, ...history];
+    setHistory(updated);
+    saveHistory(updated);
+    setDeploying(false);
   };
 
   const clearHistory = () => {
@@ -123,139 +152,148 @@ export default function Deploy() {
     localStorage.removeItem("easix_deploy_history");
   };
 
+  const statusBadge = (t: DeployTarget) => {
+    if (t.status === "running") return <span className="text-blue-500 text-xs animate-pulse">Deploying…</span>;
+    if (t.status === "ok") return <span className="text-green-600 text-xs font-medium">✓ Done</span>;
+    if (t.status === "error") return <span className="text-red-500 text-xs font-medium">✗ Failed</span>;
+    return null;
+  };
+
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-1">SSH Deploy</h2>
-      <p className="text-gray-500 mb-6">Upload and execute a provisioning script on a remote machine</p>
+      <h2 className="text-2xl font-bold mb-1">Deploy</h2>
+      <p className="text-gray-500 mb-6">Deploy a provisioning profile to one or more machines</p>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-6 max-w-lg space-y-4 mb-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Profile</label>
-          <select
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-          >
-            <option value="">-- Choose --</option>
-            {profiles.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </div>
+      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 space-y-3">
+        {targets.map((t, i) => {
+          const d = deviceById(t.device_id);
+          const showPassword = !t.device_id || (d?.auth_type === "password");
+          const showManual = !t.device_id;
 
-        {devices.length > 0 && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Saved Device <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <select
-              value={selectedDevice}
-              onChange={(e) => applyDevice(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+          return (
+            <div key={t.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-gray-400 w-16 flex-shrink-0">
+                  {isBatch ? `#${i + 1}` : "Target"}
+                </span>
+                <div className="flex-1 grid grid-cols-2 gap-2">
+                  <select
+                    value={t.profile}
+                    onChange={(e) => updateTarget(t.id, { profile: e.target.value })}
+                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  >
+                    <option value="">Profile…</option>
+                    {profiles.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={t.device_id}
+                    onChange={(e) => applyDevice(t.id, e.target.value)}
+                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  >
+                    <option value="">Device… (manual)</option>
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} — {d.host}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {targets.length > 1 && t.status === "idle" && (
+                  <button
+                    onClick={() => removeTarget(t.id)}
+                    className="text-gray-300 hover:text-red-400 transition-colors text-lg leading-none px-1"
+                  >
+                    ×
+                  </button>
+                )}
+                {statusBadge(t)}
+              </div>
+
+              {showManual && (
+                <div className="grid grid-cols-3 gap-2 pl-16">
+                  <div className="col-span-2">
+                    <input
+                      value={t.host}
+                      onChange={(e) => updateTarget(t.id, { host: e.target.value })}
+                      placeholder="Host / IP"
+                      className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
+                    />
+                  </div>
+                  <input
+                    value={t.port}
+                    onChange={(e) => updateTarget(t.id, { port: e.target.value.replace(/\D/g, "").slice(0, 5) })}
+                    placeholder="Port"
+                    className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
+                  />
+                  <input
+                    value={t.username}
+                    onChange={(e) => updateTarget(t.id, { username: e.target.value })}
+                    placeholder="Username"
+                    className="col-span-3 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                  <input
+                    value={t.key_path}
+                    onChange={(e) => updateTarget(t.id, { key_path: e.target.value })}
+                    placeholder="SSH key path (optional)"
+                    className="col-span-2 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
+                  />
+                </div>
+              )}
+
+              {showPassword && (
+                <div className="pl-16">
+                  <input
+                    type="password"
+                    value={t.password}
+                    onChange={(e) => updateTarget(t.id, { password: e.target.value })}
+                    placeholder="Password (leave empty for key auth)"
+                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                </div>
+              )}
+
+              {(t.status === "ok" || t.status === "error") && t.output && (
+                <div className="pl-16">
+                  <pre className={`p-3 rounded-md text-xs font-mono overflow-auto max-h-32 leading-relaxed ${t.status === "ok" ? "bg-gray-900 text-green-400" : "bg-red-950 text-red-300"}`}>
+                    {t.output.slice(0, 800)}{t.output.length > 800 ? "\n…" : ""}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className="flex items-center gap-3 pt-1">
+          {targets.length < 10 && (
+            <button
+              onClick={addTarget}
+              disabled={deploying}
+              className="text-sm text-primary-600 hover:text-primary-800 font-medium disabled:opacity-40 transition-colors"
             >
-              <option value="">-- Enter manually --</option>
-              {devices.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.username}@{d.host}:{d.port})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Host (IP)</label>
-            <input
-              value={host}
-              onChange={(e) => { setSelectedDevice(""); setHost(sanitizeHost(e.target.value)); }}
-              onPaste={(e) => {
-                e.preventDefault();
-                setSelectedDevice("");
-                setHost(sanitizeHost(e.clipboardData.getData("text").trim()));
-              }}
-              placeholder="192.168.1.50"
-              inputMode="decimal"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
-            <input
-              value={port}
-              onChange={(e) => setPort(sanitizePort(e.target.value))}
-              inputMode="numeric"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Leave empty for key auth"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">SSH Key Path</label>
-          <input
-            value={keyPath}
-            onChange={(e) => setKeyPath(e.target.value)}
-            placeholder="~/.ssh/id_rsa"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
-          />
-        </div>
-
-        <div className="flex gap-3">
+              + Add device
+            </button>
+          )}
+          <div className="flex-1" />
+          {error && <span className="text-red-500 text-sm">{error}</span>}
           <button
             onClick={handleDeploy}
             disabled={deploying}
-            className="flex-1 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+            className={`px-6 py-2 text-sm font-medium rounded-md text-white disabled:opacity-50 transition-colors ${isBatch ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
           >
-            {deploying ? "Deploying..." : "Deploy Now"}
-          </button>
-          <button
-            onClick={() => setShowBatch(true)}
-            className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-          >
-            Batch Deploy
+            {deploying ? "Deploying…" : isBatch ? "Batch Deploy Now" : "Deploy Now"}
           </button>
         </div>
       </div>
-
-      {error && <div className="bg-red-50 text-red-700 p-4 rounded-md mb-4">{error}</div>}
-
-      {output && (
-        <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Output</h3>
-          <pre className="bg-gray-900 text-green-400 p-5 rounded-lg text-sm overflow-auto max-h-[50vh] font-mono leading-relaxed">
-            {output}
-          </pre>
-        </div>
-      )}
 
       {history.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold">Deploy History</h3>
-            <button
-              onClick={clearHistory}
-              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-            >
+            <button onClick={clearHistory} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
               Clear history
             </button>
           </div>
@@ -290,14 +328,6 @@ export default function Deploy() {
             ))}
           </div>
         </div>
-      )}
-
-      {showBatch && (
-        <BatchDeploy
-          profiles={profiles}
-          devices={devices}
-          onClose={() => setShowBatch(false)}
-        />
       )}
     </div>
   );

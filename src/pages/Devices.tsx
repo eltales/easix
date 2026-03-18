@@ -21,6 +21,7 @@ export default function Devices() {
   const [form, setForm] = useState<Omit<Device, "id">>(EMPTY_DEVICE);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [connecting, setConnecting] = useState<string | null>(null);
 
   const load = () =>
     api.listDevices().then(setDevices).catch((e) => setError(String(e)));
@@ -52,6 +53,17 @@ export default function Devices() {
       setError(String(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConnect = async (d: Device) => {
+    setConnecting(d.id);
+    try {
+      await api.connectDevice(d.host, d.port, d.username);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setConnecting(null);
     }
   };
 
@@ -106,6 +118,13 @@ export default function Devices() {
                   className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
                 >
                   Edit
+                </button>
+                <button
+                  onClick={() => handleConnect(d)}
+                  disabled={connecting === d.id}
+                  className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  {connecting === d.id ? "Opening..." : "Connect"}
                 </button>
                 <button
                   onClick={() => handleDelete(d.id, d.name)}
