@@ -51,6 +51,58 @@ pub fn delete_device(id: String) -> Result<(), String> {
 }
 
 #[command]
+pub async fn ping_device(host: String, port: u16) -> Option<u32> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::net::{TcpStream, ToSocketAddrs};
+        use std::time::{Duration, Instant};
+
+        let addr = format!("{}:{}", host, port);
+        match addr.to_socket_addrs() {
+            Ok(mut addrs) => {
+                if let Some(a) = addrs.next() {
+                    let start = Instant::now();
+                    if TcpStream::connect_timeout(&a, Duration::from_secs(2)).is_ok() {
+                        Some(start.elapsed().as_millis() as u32)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        }
+    })
+    .await
+    .unwrap_or(None)
+}
+
+#[command]
+pub fn duplicate_device(id: String) -> Result<Device, String> {
+    let dir = devices_dir()?;
+    let path = dir.join(format!("{id}.json"));
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut device: Device = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    let new_id = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let t = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        format!("{:x}cp", t)
+    };
+    device.id = new_id;
+    device.name = format!("{} (copy)", device.name);
+    device.last_connected = None;
+
+    let new_path = dir.join(format!("{}.json", device.id));
+    let json = serde_json::to_string_pretty(&device).map_err(|e| e.to_string())?;
+    fs::write(&new_path, json).map_err(|e| format!("Cannot write device: {e}"))?;
+    Ok(device)
+}
+
+#[command]
 pub async fn connect_device(
     app: tauri::AppHandle,
     host: String,

@@ -28,6 +28,8 @@ fn main() {
             devices::save_device,
             devices::delete_device,
             devices::connect_device,
+            devices::ping_device,
+            devices::duplicate_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

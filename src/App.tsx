@@ -5,9 +5,11 @@ import Editor from "./pages/Editor";
 import Preview from "./pages/Preview";
 import Deploy from "./pages/Deploy";
 import Devices from "./pages/Devices";
+import { DevicesProvider } from "./context/DevicesContext";
 
 export default function App() {
   return (
+    <DevicesProvider>
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
@@ -19,5 +21,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </DevicesProvider>
   );
 }

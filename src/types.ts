@@ -43,6 +43,12 @@ export interface Device {
   username: string;
   auth_type: "password" | "key";
   key_path?: string;
+  group?: string;
+  tags: string[];
+  description?: string;
+  color?: string;
+  os?: string;
+  last_connected?: string;
 }
 
 export interface Profile {

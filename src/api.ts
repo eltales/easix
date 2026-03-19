@@ -35,6 +35,12 @@ export const api = {
   connectDevice: (host: string, port: number, username: string) =>
     invoke<void>("connect_device", { host, port, username }),
 
+  pingDevice: (host: string, port: number) =>
+    invoke<number | null>("ping_device", { host, port }),
+
+  duplicateDevice: (id: string) =>
+    invoke<Device>("duplicate_device", { id }),
+
   exportProfileEsx: (name: string) =>
     invoke<string | null>("export_profile_esx", { name }),
 

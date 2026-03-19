@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { api } from "../api";
 import { Device } from "../types";
+import { useDevices } from "../context/DevicesContext";
+import { Select } from "../components/Select";
 
 interface DeployTarget {
   id: string;
@@ -51,8 +54,9 @@ function saveHistory(entries: HistoryEntry[]) {
 }
 
 export default function Deploy() {
+  const { devices } = useDevices();
+  const location = useLocation();
   const [profiles, setProfiles] = useState<string[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
   const [targets, setTargets] = useState<DeployTarget[]>([makeTarget()]);
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState("");
@@ -61,8 +65,24 @@ export default function Deploy() {
 
   useEffect(() => {
     api.listProfiles().then(setProfiles);
-    api.listDevices().then(setDevices);
   }, []);
+
+  // Pre-select device when coming from Quick Deploy
+  useEffect(() => {
+    const deviceId = (location.state as { deviceId?: string } | null)?.deviceId;
+    if (deviceId && devices.length > 0) {
+      setTargets((prev) => {
+        const first = prev[0];
+        if (first.device_id) return prev; // already selected, don't override
+        const d = devices.find((x) => x.id === deviceId);
+        if (!d) return prev;
+        return prev.map((t, i) => i === 0 ? {
+          ...t, device_id: d.id, host: d.host, port: String(d.port),
+          username: d.username, key_path: d.auth_type === "key" ? (d.key_path ?? "") : "",
+        } : t);
+      });
+    }
+  }, [location.state, devices]);
 
   const deviceById = (id: string) => devices.find((d) => d.id === id);
 
@@ -161,104 +181,67 @@ export default function Deploy() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-1">Deploy</h2>
-      <p className="text-gray-500 mb-6">Deploy a provisioning profile to one or more machines</p>
+      <h2 className="text-2xl font-bold text-surface-50 mb-1">Deploy</h2>
+      <p className="text-surface-200 text-sm mb-6">Deploy a provisioning profile to one or more machines</p>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 space-y-3">
+      <div className="bg-surface-700 border border-surface-500 rounded-xl p-6 mb-6 space-y-3">
         {targets.map((t, i) => {
           const d = deviceById(t.device_id);
           const showPassword = !t.device_id || (d?.auth_type === "password");
           const showManual = !t.device_id;
 
           return (
-            <div key={t.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-400 w-16 flex-shrink-0">
-                  {isBatch ? `#${i + 1}` : "Target"}
-                </span>
+            <div key={t.id} className="border border-surface-500 rounded-xl p-4 bg-surface-800">
+              {/* Row header: badge + selects + status */}
+              <div className="flex items-center gap-2 mb-2">
+                {isBatch && (
+                  <span className="text-xs font-medium text-surface-400 w-6 flex-shrink-0 text-center">
+                    {i + 1}
+                  </span>
+                )}
                 <div className="flex-1 grid grid-cols-2 gap-2">
-                  <select
+                  <Select
                     value={t.profile}
-                    onChange={(e) => updateTarget(t.id, { profile: e.target.value })}
-                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                  >
-                    <option value="">Profile…</option>
-                    {profiles.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-
-                  <select
+                    onChange={(v) => updateTarget(t.id, { profile: v })}
+                    options={[{ value: "", label: "Profile…" }, ...profiles.map((n) => ({ value: n, label: n }))]}
+                  />
+                  <Select
                     value={t.device_id}
-                    onChange={(e) => applyDevice(t.id, e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                  >
-                    <option value="">Device… (manual)</option>
-                    {devices.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} — {d.host}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => applyDevice(t.id, v)}
+                    options={[{ value: "", label: "Device… (manual)" }, ...devices.map((d) => ({ value: d.id, label: `${d.name} — ${d.host}` }))]}
+                  />
                 </div>
-
                 {targets.length > 1 && t.status === "idle" && (
-                  <button
-                    onClick={() => removeTarget(t.id)}
-                    className="text-gray-300 hover:text-red-400 transition-colors text-lg leading-none px-1"
-                  >
-                    ×
-                  </button>
+                  <button onClick={() => removeTarget(t.id)}
+                    className="text-surface-300 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
                 )}
                 {statusBadge(t)}
               </div>
 
+              {/* Manual fields — no indent, flush with selects above */}
               {showManual && (
-                <div className="grid grid-cols-3 gap-2 pl-16">
-                  <div className="col-span-2">
-                    <input
-                      value={t.host}
-                      onChange={(e) => updateTarget(t.id, { host: e.target.value })}
-                      placeholder="Host / IP"
-                      className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
-                    />
-                  </div>
-                  <input
-                    value={t.port}
-                    onChange={(e) => updateTarget(t.id, { port: e.target.value.replace(/\D/g, "").slice(0, 5) })}
-                    placeholder="Port"
-                    className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
-                  />
-                  <input
-                    value={t.username}
-                    onChange={(e) => updateTarget(t.id, { username: e.target.value })}
-                    placeholder="Username"
-                    className="col-span-3 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                  />
-                  <input
-                    value={t.key_path}
-                    onChange={(e) => updateTarget(t.id, { key_path: e.target.value })}
-                    placeholder="SSH key path (optional)"
-                    className="col-span-2 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none font-mono"
-                  />
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <input value={t.host} onChange={(e) => updateTarget(t.id, { host: e.target.value })}
+                    placeholder="Host / IP" className="input col-span-2 font-mono" />
+                  <input value={t.port} onChange={(e) => updateTarget(t.id, { port: e.target.value.replace(/\D/g, "").slice(0, 5) })}
+                    placeholder="Port" className="input font-mono" />
+                  <input value={t.username} onChange={(e) => updateTarget(t.id, { username: e.target.value })}
+                    placeholder="Username" className="input col-span-3" />
+                  <input value={t.key_path} onChange={(e) => updateTarget(t.id, { key_path: e.target.value })}
+                    placeholder="SSH key path (optional)" className="input col-span-3 font-mono" />
                 </div>
               )}
 
               {showPassword && (
-                <div className="pl-16">
-                  <input
-                    type="password"
-                    value={t.password}
-                    onChange={(e) => updateTarget(t.id, { password: e.target.value })}
-                    placeholder="Password (leave empty for key auth)"
-                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                  />
+                <div className="mt-2">
+                  <input type="password" value={t.password} onChange={(e) => updateTarget(t.id, { password: e.target.value })}
+                    placeholder="Password (leave empty for key auth)" className="input w-full" />
                 </div>
               )}
 
               {(t.status === "ok" || t.status === "error") && t.output && (
-                <div className="pl-16">
-                  <pre className={`p-3 rounded-md text-xs font-mono overflow-auto max-h-32 leading-relaxed ${t.status === "ok" ? "bg-gray-900 text-green-400" : "bg-red-950 text-red-300"}`}>
+                <div className="mt-2">
+                  <pre className={`p-3 rounded-lg text-xs font-mono overflow-auto max-h-32 leading-relaxed ${t.status === "ok" ? "bg-surface-900 text-green-400" : "bg-red-950/40 text-red-300"}`}>
                     {t.output.slice(0, 800)}{t.output.length > 800 ? "\n…" : ""}
                   </pre>
                 </div>
@@ -269,21 +252,15 @@ export default function Deploy() {
 
         <div className="flex items-center gap-3 pt-1">
           {targets.length < 10 && (
-            <button
-              onClick={addTarget}
-              disabled={deploying}
-              className="text-sm text-primary-600 hover:text-primary-800 font-medium disabled:opacity-40 transition-colors"
-            >
+            <button onClick={addTarget} disabled={deploying}
+              className="text-sm text-primary-400 hover:text-primary-300 font-medium disabled:opacity-40 transition-colors">
               + Add device
             </button>
           )}
           <div className="flex-1" />
-          {error && <span className="text-red-500 text-sm">{error}</span>}
-          <button
-            onClick={handleDeploy}
-            disabled={deploying}
-            className={`px-6 py-2 text-sm font-medium rounded-md text-white disabled:opacity-50 transition-colors ${isBatch ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
-          >
+          {error && <span className="text-red-400 text-sm">{error}</span>}
+          <button onClick={handleDeploy} disabled={deploying}
+            className={`px-6 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50 transition-colors ${isBatch ? "bg-blue-600 hover:bg-blue-500" : "bg-green-700 hover:bg-green-600"}`}>
             {deploying ? "Deploying…" : isBatch ? "Batch Deploy Now" : "Deploy Now"}
           </button>
         </div>
@@ -292,34 +269,34 @@ export default function Deploy() {
       {history.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold">Deploy History</h3>
-            <button onClick={clearHistory} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
+            <h3 className="text-lg font-semibold text-surface-50">Deploy History</h3>
+            <button onClick={clearHistory} className="text-xs text-surface-300 hover:text-red-400 transition-colors">
               Clear history
             </button>
           </div>
           <div className="space-y-2">
             {history.map((entry, i) => (
-              <div key={i} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div key={i} className="bg-surface-700 border border-surface-500 rounded-xl overflow-hidden">
                 <button
                   onClick={() => setExpandedEntry(expandedEntry === i ? null : i)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-600 transition-colors text-left"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`flex-shrink-0 w-2 h-2 rounded-full ${entry.success ? "bg-green-500" : "bg-red-500"}`} />
-                    <span className="text-sm font-medium truncate">{entry.profile}</span>
+                    <span className="text-sm font-medium text-surface-50 truncate">{entry.profile}</span>
                     {entry.device_name && (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{entry.device_name}</span>
+                      <span className="text-xs bg-surface-600 text-surface-100 px-2 py-0.5 rounded-md">{entry.device_name}</span>
                     )}
-                    <span className="text-xs text-gray-400 font-mono">{entry.username}@{entry.host}:{entry.port}</span>
+                    <span className="text-xs text-surface-300 font-mono">{entry.username}@{entry.host}:{entry.port}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                    <span className="text-xs text-gray-400">{entry.date}</span>
-                    <span className="text-gray-300 text-xs">{expandedEntry === i ? "▲" : "▼"}</span>
+                    <span className="text-xs text-surface-300">{entry.date}</span>
+                    <span className="text-surface-400 text-xs">{expandedEntry === i ? "▲" : "▼"}</span>
                   </div>
                 </button>
                 {expandedEntry === i && (
-                  <div className="border-t border-gray-100 px-4 py-3">
-                    <pre className="bg-gray-900 text-green-400 p-4 rounded-md text-xs overflow-auto max-h-[30vh] font-mono leading-relaxed">
+                  <div className="border-t border-surface-500 px-4 py-3">
+                    <pre className="bg-surface-900 text-green-400 p-4 rounded-lg text-xs overflow-auto max-h-[30vh] font-mono leading-relaxed">
                       {entry.output}
                     </pre>
                   </div>

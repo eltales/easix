@@ -36,8 +36,7 @@ export default function Dashboard() {
 
   const load = () => {
     setLoading(true);
-    api
-      .listProfiles()
+    api.listProfiles()
       .then(setProfiles)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -47,29 +46,18 @@ export default function Dashboard() {
 
   const handleDelete = async (name: string) => {
     if (!confirm(`Delete profile "${name}"?`)) return;
-    try {
-      await api.deleteProfile(name);
-      load();
-    } catch (e) {
-      setError(String(e));
-    }
+    try { await api.deleteProfile(name); load(); }
+    catch (e) { setError(String(e)); }
   };
 
   const handleExport = async (name: string) => {
-    try {
-      await api.exportProfileEsx(name);
-    } catch (e) {
-      setError(String(e));
-    }
+    try { await api.exportProfileEsx(name); }
+    catch (e) { setError(String(e)); }
   };
 
   const handleImport = async () => {
-    try {
-      const imported = await api.importProfileEsx();
-      if (imported) load();
-    } catch (e) {
-      setError(String(e));
-    }
+    try { const imported = await api.importProfileEsx(); if (imported) load(); }
+    catch (e) { setError(String(e)); }
   };
 
   const handleDuplicate = async (name: string) => {
@@ -77,34 +65,30 @@ export default function Dashboard() {
       const existing = await api.listProfiles();
       let suffix = 1;
       let target = `${name}_${String(suffix).padStart(2, "0")}`;
-      while (existing.includes(target)) {
-        suffix++;
-        target = `${name}_${String(suffix).padStart(2, "0")}`;
-      }
+      while (existing.includes(target)) { suffix++; target = `${name}_${String(suffix).padStart(2, "0")}`; }
       await api.duplicateProfile(name, target);
       load();
-    } catch (e) {
-      setError(String(e));
-    }
+    } catch (e) { setError(String(e)); }
   };
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-bold">Dashboard</h2>
-          <p className="text-gray-500 mt-1">Manage configuration profiles</p>
+          <h2 className="text-2xl font-bold text-surface-50">Dashboard</h2>
+          <p className="text-surface-200 mt-1 text-sm">Manage configuration profiles</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={handleImport}
-            className="border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors"
+            className="border border-surface-500 text-surface-100 px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface-700 hover:border-surface-400 transition-colors"
           >
             Import .esx
           </button>
           <button
             onClick={() => navigate("/editor")}
-            className="bg-primary-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-primary-700 transition-colors"
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-500 transition-colors"
           >
             + New Profile
           </button>
@@ -112,16 +96,16 @@ export default function Dashboard() {
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-700 p-4 rounded-md mb-4">
+        <div className="bg-red-900/30 border border-red-700/50 text-red-300 p-4 rounded-xl mb-4 text-sm">
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-surface-200 text-sm">Loading...</p>
       ) : profiles.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-lg">No profiles yet</p>
+        <div className="text-center py-20 text-surface-300">
+          <p className="text-lg text-surface-100">No profiles yet</p>
           <p className="text-sm mt-1">Create your first configuration profile</p>
         </div>
       ) : (
@@ -129,28 +113,28 @@ export default function Dashboard() {
           {profiles.map((name) => (
             <div
               key={name}
-              className="bg-white border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow"
+              className="bg-surface-700 border border-surface-500 rounded-xl p-5 hover:border-surface-400 transition-colors group"
             >
-              <h3 className="font-semibold text-lg">{name}</h3>
+              <h3 className="font-semibold text-surface-50">{name}</h3>
               <div className="mt-4 flex gap-1">
                 <button
                   onClick={() => navigate(`/editor/${name}`)}
                   title="Edit"
-                  className="p-2 text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                  className="p-2 text-surface-200 rounded-lg hover:bg-surface-600 hover:text-surface-50 transition-colors"
                 >
                   <IconEdit />
                 </button>
                 <button
                   onClick={() => handleDuplicate(name)}
                   title="Duplicate"
-                  className="p-2 text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                  className="p-2 text-surface-200 rounded-lg hover:bg-surface-600 hover:text-surface-50 transition-colors"
                 >
                   <IconDuplicate />
                 </button>
                 <button
                   onClick={() => handleExport(name)}
                   title="Export .esx"
-                  className="p-2 text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                  className="p-2 text-surface-200 rounded-lg hover:bg-surface-600 hover:text-surface-50 transition-colors"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                     <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
@@ -158,19 +142,16 @@ export default function Dashboard() {
                   </svg>
                 </button>
                 <button
-                  onClick={() => {
-                    sessionStorage.setItem("easix_preview_profile", name);
-                    navigate("/preview");
-                  }}
+                  onClick={() => { sessionStorage.setItem("easix_preview_profile", name); navigate("/preview"); }}
                   title="Preview"
-                  className="p-2 text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                  className="p-2 text-surface-200 rounded-lg hover:bg-surface-600 hover:text-surface-50 transition-colors"
                 >
                   <IconPreview />
                 </button>
                 <button
                   onClick={() => handleDelete(name)}
                   title="Delete"
-                  className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors ml-auto"
+                  className="p-2 text-red-500/70 hover:bg-red-900/30 hover:text-red-400 rounded-lg transition-colors ml-auto"
                 >
                   <IconDelete />
                 </button>
