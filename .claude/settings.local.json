@@ -10,7 +10,20 @@
       "Bash(wsl -e bash -c \"cd /home/projekty/easix && rm -rf node_modules package-lock.json && npm install\")",
       "Bash(wsl -e bash -c \"dpkg -l | grep -E ''libwebkit2gtk-4.1|libgtk-3'' | head -5\")",
       "Bash(wsl -e bash -c:*)",
-      "WebFetch(domain:static.m89.pl)"
+      "WebFetch(domain:static.m89.pl)",
+      "Bash(cargo check:*)",
+      "Read(///wsl.localhost/Ubuntu//**)",
+      "Bash(wsl -e bash -lc \"cd /home/projekty/easix && cargo check 2>&1 | tail -5\")",
+      "Bash(wsl -e bash -lc \"find /home -name ''Cargo.toml'' 2>/dev/null | head -5\")",
+      "Bash(wsl -e bash -lc \"cd /home/projekty/easix/src-tauri && cargo check 2>&1 | tail -5\")",
+      "Bash(wsl -e bash -lc \"cd /home/projekty/easix && npm run build 2>&1 | tail -6\")",
+      "Bash(wsl -e bash -lc \"cd /home/projekty/easix && npm run build 2>&1 | tail -15\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(wsl -e bash -lc \"cd /home/projekty/easix && npm run build 2>&1 | tail -10\")",
+      "Bash(wsl -e bash -lc \"cd /home/projekty/easix && npm run build 2>&1 | tail -12\")",
+      "Bash(npm run:*)",
+      "Bash(wsl -e grep -rn \"Select profile\\\\|select profile\" /home/projekty/easix/src/)"
     ]
   }
 }
