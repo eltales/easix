@@ -19,15 +19,102 @@ const PRESET_COLORS = [
 ];
 
 const OS_OPTIONS = [
-  { value: "ubuntu",  label: "Ubuntu",      icon: "🟠" },
-  { value: "debian",  label: "Debian",      icon: "🔴" },
-  { value: "alpine",  label: "Alpine",      icon: "🔵" },
-  { value: "centos",  label: "CentOS",      icon: "🟣" },
-  { value: "fedora",  label: "Fedora",      icon: "🔵" },
-  { value: "other",   label: "Other Linux", icon: "🐧" },
+  { value: "ubuntu",  label: "Ubuntu" },
+  { value: "debian",  label: "Debian" },
+  { value: "alpine",  label: "Alpine" },
+  { value: "centos",  label: "CentOS" },
+  { value: "fedora",  label: "Fedora" },
+  { value: "windows", label: "Windows" },
+  { value: "other",   label: "Other Linux" },
 ];
 
-const osIcon = (os?: string) => OS_OPTIONS.find((o) => o.value === os)?.icon ?? "🖥️";
+function OsSvg({ os }: { os?: string }) {
+  switch (os) {
+    case "ubuntu":
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none">
+          <circle cx="12" cy="12" r="9" stroke="#E95420" strokeWidth="2"/>
+          <circle cx="12" cy="4.5" r="2" fill="#E95420"/>
+          <circle cx="5.3" cy="17" r="2" fill="#E95420"/>
+          <circle cx="18.7" cy="17" r="2" fill="#E95420"/>
+        </svg>
+      );
+    case "debian":
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <path fill="#A80030" d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm1 4.5c2.2.3 4 2 4.3 4.2-1-.8-2.2-1.2-3.3-1-1.8.3-3 2-2.7 3.8.2 1.4 1.4 2.5 2.8 2.6 1.7.2 3.2-1.1 3.4-2.8.1-.7 0-1.4-.3-2 1.2 1.1 1.7 2.8 1.3 4.4-.5 2-2.5 3.3-4.5 2.9-2-.4-3.4-2.4-3-4.4C11.5 12 13 10.5 13 9c0-.6-.3-1.3-.8-1.7.3-.3.5-.6.8-.8z"/>
+        </svg>
+      );
+    case "alpine":
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <path fill="#0D597F" d="M12 3 2 21h20L12 3zm0 5 6 11H6l6-11z"/>
+        </svg>
+      );
+    case "windows":
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <path fill="#0078D4" d="M3 3h8.5v8.5H3zM13.5 3H21v8.5h-7.5zM3 13.5h8.5V21H3zM13.5 13.5H21V21h-7.5z"/>
+        </svg>
+      );
+    case "centos":
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <path fill="#932279" d="M12 2 2 12l10 10 10-10L12 2zm0 4 6 6-6 6-6-6 6-6z"/>
+        </svg>
+      );
+    case "fedora":
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <circle cx="12" cy="12" r="10" fill="#294172"/>
+          <path fill="white" d="M12 7c-2.8 0-5 2.2-5 5s2.2 5 5 5v-2.5c-1.4 0-2.5-1.1-2.5-2.5S10.6 9.5 12 9.5s2.5 1.1 2.5 2.5v5H17v-5c0-2.8-2.2-5-5-5z"/>
+        </svg>
+      );
+    case "other":
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <path fill="#FCC624" d="M12 2C9 2 7 4.2 7 7c0 1.5.5 3 1.5 3.8C7.2 12 6 13.8 6 16c0 3.3 2.7 5 6 5s6-1.7 6-5c0-2.2-1.2-4-2.5-5.2C16.5 10 17 8.5 17 7c0-2.8-2-5-5-5z"/>
+          <ellipse cx="10" cy="8" rx="1" ry="1.5" fill="#222"/>
+          <ellipse cx="14" cy="8" rx="1" ry="1.5" fill="#222"/>
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <rect x="2" y="4" width="20" height="6" rx="1.5" fill="#6b7280"/>
+          <rect x="2" y="14" width="20" height="6" rx="1.5" fill="#6b7280"/>
+          <circle cx="6" cy="7" r="1" fill="#d1d5db"/>
+          <circle cx="6" cy="17" r="1" fill="#d1d5db"/>
+        </svg>
+      );
+  }
+}
+
+function OsIcon({ os, status }: { os?: string; status: PingStatus }) {
+  const borderCls =
+    status === null      ? "border-red-500"    :
+    status !== undefined ? "border-green-500"  :
+                           "border-surface-500";
+  const glowStyle =
+    status === null      ? { boxShadow: "0 0 6px 2px rgba(239,68,68,0.45)" }  :
+    status !== undefined ? { boxShadow: "0 0 6px 2px rgba(34,197,94,0.45)" }  :
+                           {};
+  const label = OS_OPTIONS.find((o) => o.value === os)?.label ?? "Unknown";
+  const pingLabel =
+    status === null      ? "Offline"       :
+    status !== undefined ? `Online · ${status}ms` :
+                           "Not pinged";
+
+  return (
+    <div
+      className={`w-9 h-9 rounded-lg border-2 ${borderCls} flex items-center justify-center bg-surface-800 flex-shrink-0`}
+      style={glowStyle}
+      title={`${label} · ${pingLabel}`}
+    >
+      <OsSvg os={os} />
+    </div>
+  );
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -44,34 +131,6 @@ function relativeTime(iso?: string): string | null {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
-}
-
-// ── Status dot with glow ──────────────────────────────────────────────────────
-
-function StatusDot({ status }: { status: PingStatus }) {
-  if (status === undefined) {
-    return (
-      <span className="inline-flex h-2.5 w-2.5 rounded-full bg-surface-400" title="Unknown" />
-    );
-  }
-  if (status === null) {
-    return (
-      <span
-        className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500"
-        title="Offline"
-        style={{ boxShadow: "0 0 7px 2px rgba(239,68,68,0.55)" }}
-      />
-    );
-  }
-  return (
-    <span className="relative flex h-2.5 w-2.5 flex-shrink-0" title={`Online · ${status}ms`}>
-      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
-      <span
-        className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500"
-        style={{ boxShadow: "0 0 9px 3px rgba(34,197,94,0.65)" }}
-      />
-    </span>
-  );
 }
 
 // ── Empty device form ─────────────────────────────────────────────────────────
@@ -110,13 +169,15 @@ function DeviceCard({ device: d, status, onEdit, onDelete, onDuplicate, onConnec
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <StatusDot status={status} />
+        <div className="flex items-center gap-3 min-w-0">
+          <OsIcon os={d.os} status={status} />
           <span className="font-semibold text-white truncate">{d.name}</span>
-          {d.os && <span className="text-base flex-shrink-0" title={d.os}>{osIcon(d.os)}</span>}
         </div>
         {status !== undefined && status !== null && (
-          <span className="text-xs text-surface-300 flex-shrink-0 tabular-nums">{status}ms</span>
+          <span className="text-xs text-green-400 flex-shrink-0 tabular-nums">{status}ms</span>
+        )}
+        {status === null && (
+          <span className="text-xs text-red-400 flex-shrink-0">offline</span>
         )}
       </div>
 
