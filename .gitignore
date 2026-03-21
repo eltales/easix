@@ -19,4 +19,19 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Claude
 .claude/
+
+# Tauri generated
+src-tauri/gen/
+
+# Tauri mobile icons (not needed for Windows build)
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# Test/dev files
+*.esx
+logo.ico
+logo.png
+run.bat
