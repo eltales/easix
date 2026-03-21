@@ -1,3 +1,11 @@
+export interface ImportResult {
+  profiles_added: string[];
+  profiles_overwritten: string[];
+  profiles_renamed: string[];
+  devices_added: string[];
+  devices_renamed: string[];
+}
+
 export interface UserConfig {
   name: string;
   sudo: boolean;

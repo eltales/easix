@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { ImportResult } from "../types";
 
 const IconEdit = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -32,6 +33,7 @@ export default function Dashboard() {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [importSummary, setImportSummary] = useState("");
   const navigate = useNavigate();
 
   const load = () => {
@@ -56,14 +58,31 @@ export default function Dashboard() {
   };
 
   const handleImport = async () => {
-    try { const imported = await api.importAllProfilesEsx(); if (imported) load(); }
-    catch (e) { setError(String(e)); }
+    try {
+      const result = await api.importConfig();
+      if (result) {
+        load();
+        const summary = buildImportSummary(result);
+        if (summary) setError(""); // clear old errors; show summary as success
+        setImportSummary(summary);
+      }
+    } catch (e) { setError(String(e)); }
   };
 
   const handleExportAll = async () => {
-    try { await api.exportAllProfilesEsx(); }
+    try { await api.exportConfig(); }
     catch (e) { setError(String(e)); }
   };
+
+  function buildImportSummary(r: ImportResult): string {
+    const lines: string[] = [];
+    if (r.profiles_added.length)       lines.push(`Added: ${r.profiles_added.join(", ")}`);
+    if (r.profiles_overwritten.length) lines.push(`Overwritten: ${r.profiles_overwritten.join(", ")}`);
+    if (r.profiles_renamed.length)     lines.push(`Renamed: ${r.profiles_renamed.join(", ")}`);
+    if (r.devices_added.length)        lines.push(`Devices added: ${r.devices_added.join(", ")}`);
+    if (r.devices_renamed.length)      lines.push(`Devices renamed: ${r.devices_renamed.join(", ")}`);
+    return lines.join(" · ");
+  }
 
   const handleDuplicate = async (name: string) => {
     try {
@@ -89,13 +108,13 @@ export default function Dashboard() {
             onClick={handleExportAll}
             className="border border-surface-500 text-surface-100 px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface-700 hover:border-surface-400 transition-colors"
           >
-            Export all
+            Export profile
           </button>
           <button
             onClick={handleImport}
             className="border border-surface-500 text-surface-100 px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface-700 hover:border-surface-400 transition-colors"
           >
-            Import .esx
+            Import config
           </button>
           <button
             onClick={() => navigate("/editor")}
@@ -109,6 +128,11 @@ export default function Dashboard() {
       {error && (
         <div className="bg-red-900/30 border border-red-700/50 text-red-300 p-4 rounded-xl mb-4 text-sm">
           {error}
+        </div>
+      )}
+      {importSummary && !error && (
+        <div className="bg-green-900/20 border border-green-700/40 text-green-300 p-3 rounded-xl mb-4 text-sm">
+          Imported — {importSummary}
         </div>
       )}
 

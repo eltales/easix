@@ -4,7 +4,7 @@
 mod commands;
 mod models;
 
-use commands::{deploy, devices, generator, profiles};
+use commands::{config, deploy, devices, generator, profiles};
 
 fn main() {
     tauri::Builder::default()
@@ -32,6 +32,8 @@ fn main() {
             devices::connect_device,
             devices::ping_device,
             devices::duplicate_device,
+            config::export_config,
+            config::import_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
