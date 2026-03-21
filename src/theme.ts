@@ -87,20 +87,22 @@ export interface FontTheme {
   id: string;
   label: string;
   preview: string; // swatch hex
-  value: string;   // CSS var value "R G B"
+  t0: string;      // primary text "R G B"  → surface-50
+  t1: string;      // secondary text "R G B" → surface-100
 }
 
 export const FONT_THEMES: FontTheme[] = [
-  { id: "neutral", label: "Neutral", preview: "#e5e5e5", value: "229 229 229" },
-  { id: "bright",  label: "Bright",  preview: "#f5f5f5", value: "245 245 245" },
-  { id: "warm",    label: "Warm",    preview: "#f5f0e8", value: "245 240 232" },
-  { id: "cool",    label: "Cool",    preview: "#e8f0ff", value: "232 240 255" },
-  { id: "dimmed",  label: "Dimmed",  preview: "#a3a3a3", value: "163 163 163" },
+  { id: "neutral", label: "Neutral", preview: "#e5e5e5", t0: "229 229 229", t1: "163 163 163" },
+  { id: "bright",  label: "Bright",  preview: "#f5f5f5", t0: "245 245 245", t1: "196 196 196" },
+  { id: "warm",    label: "Warm",    preview: "#f5f0e8", t0: "245 240 232", t1: "196 192 180" },
+  { id: "cool",    label: "Cool",    preview: "#e8f0ff", t0: "232 240 255", t1: "185 196 220" },
+  { id: "dimmed",  label: "Dimmed",  preview: "#a3a3a3", t0: "163 163 163", t1: "115 115 115" },
 ];
 
 export function applyFont(id: string): void {
   const t = FONT_THEMES.find((x) => x.id === id) ?? FONT_THEMES[0];
-  document.documentElement.style.setProperty("--text-primary", t.value);
+  document.documentElement.style.setProperty("--t0", t.t0);
+  document.documentElement.style.setProperty("--t1", t.t1);
   localStorage.setItem("easix-font", id);
 }
 

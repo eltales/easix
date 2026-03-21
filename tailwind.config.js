@@ -29,11 +29,11 @@ export default {
           600: "rgb(var(--s6) / <alpha-value>)",
           500: "rgb(var(--s5) / <alpha-value>)",
           400: "rgb(var(--s4) / <alpha-value>)",
-          // 300–50: static (text / icons — not affected by bg theme)
+          // 300–50: text colors — 50 and 100 dynamic via CSS vars (font theme)
           300: "#525252",
           200: "#737373",
-          100: "#a3a3a3",
-          50:  "#e5e5e5",
+          100: "rgb(var(--t1) / <alpha-value>)",
+          50:  "rgb(var(--t0) / <alpha-value>)",
         },
       },
       borderRadius: {

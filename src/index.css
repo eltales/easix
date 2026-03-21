@@ -18,8 +18,9 @@
   --s5: 38 38 38;
   --s4: 51 51 51;
 
-  /* Text (default = neutral) */
-  --text-primary: 229 229 229;
+  /* Text colors (default = neutral) */
+  --t0: 229 229 229;  /* surface-50  — primary text */
+  --t1: 163 163 163;  /* surface-100 — secondary text */
 }
 
 @layer base {
@@ -29,7 +30,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background-color: #141414;
-    color: rgb(var(--text-primary));
+    color: rgb(var(--t0));
     color-scheme: dark;
   }
 
