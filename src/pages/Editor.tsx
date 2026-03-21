@@ -314,11 +314,18 @@ export default function Editor() {
                   <label className={labelCls}>Swap (MB)</label>
                   <input
                     type="number"
+                    min={128}
+                    max={65536}
                     value={profile.system.swap_mb ?? ""}
-                    onChange={(e) => update("system", { ...profile.system, swap_mb: e.target.value ? parseInt(e.target.value) : undefined })}
+                    onChange={(e) => {
+                      if (!e.target.value) { update("system", { ...profile.system, swap_mb: undefined }); return; }
+                      const v = Math.min(65536, Math.max(128, parseInt(e.target.value)));
+                      update("system", { ...profile.system, swap_mb: v });
+                    }}
                     placeholder="— No change —"
                     className={inputCls}
                   />
+                  <p className={hintCls}>128 – 65536 MB</p>
                 </div>
 
                 {/* GRUB / Extlinux timeout */}
@@ -327,11 +334,19 @@ export default function Editor() {
                     <label className={labelCls}>{isAlpine ? "Extlinux timeout (×100ms)" : "GRUB timeout (sec)"}</label>
                     <input
                       type="number"
+                      min={0}
+                      max={isAlpine ? 600 : 60}
                       value={profile.system.grub_timeout ?? ""}
-                      onChange={(e) => update("system", { ...profile.system, grub_timeout: e.target.value ? parseInt(e.target.value) : undefined })}
+                      onChange={(e) => {
+                        if (!e.target.value) { update("system", { ...profile.system, grub_timeout: undefined }); return; }
+                        const max = isAlpine ? 600 : 60;
+                        const v = Math.min(max, Math.max(0, parseInt(e.target.value)));
+                        update("system", { ...profile.system, grub_timeout: v });
+                      }}
                       placeholder="— No change —"
                       className={inputCls}
                     />
+                    <p className={hintCls}>{isAlpine ? "0 – 600 (×100ms, max 60s)" : "0 – 60 sec"}</p>
                   </div>
                 )}
               </div>
