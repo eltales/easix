@@ -27,7 +27,11 @@ pub struct Device {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SoftwareItem {
     pub name: String,
+    #[serde(default = "default_task_type")]
+    pub task_type: String, // "package" | "service" | "user" | "file" | "command"
     pub commands: Vec<String>,
+    #[serde(default)]
+    pub check_cmd: Option<String>,
 }
 
 fn deserialize_packages<'de, D>(deserializer: D) -> Result<Vec<SoftwareItem>, D::Error>
@@ -41,7 +45,9 @@ where
             serde_json::Value::String(s) => {
                 items.push(SoftwareItem {
                     name: s.clone(),
+                    task_type: "package".into(),
                     commands: vec![format!("apt-get install -y {}", s)],
+                    check_cmd: None,
                 });
             }
             serde_json::Value::Object(_) => {
@@ -190,6 +196,7 @@ impl Default for Profile {
     }
 }
 
+fn default_task_type() -> String { "command".into() }
 fn default_os() -> String { "ubuntu2204".into() }
 fn default_run_once() -> String { "run_once".into() }
 fn default_hostname() -> String { "machine01".into() }
@@ -208,7 +215,9 @@ mod tests {
         let mut profile = Profile::default();
         profile.packages = vec![SoftwareItem {
             name: "vim".into(),
+            task_type: "package".into(),
             commands: vec!["apt-get install -y vim".into()],
+            check_cmd: None,
         }];
         let json = serde_json::to_string(&profile).unwrap();
         let restored: Profile = serde_json::from_str(&json).unwrap();

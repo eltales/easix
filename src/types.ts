@@ -30,9 +30,13 @@ export interface SystemConfig {
   ntp: boolean;
 }
 
+export type TaskType = "package" | "service" | "user" | "file" | "command";
+
 export interface SoftwareItem {
   name: string;
+  task_type: TaskType;
   commands: string[];
+  check_cmd?: string;
 }
 
 export interface Device {
@@ -52,7 +56,7 @@ export interface Device {
 }
 
 export interface Profile {
-  os: "debian11" | "ubuntu2204" | "ubuntu2404" | "alpine318";
+  os: "none" | "debian11" | "ubuntu2204" | "ubuntu2404" | "alpine318" | "windows2019" | "windows2022" | "windows11" | "windows10";
   hostname: string;
   packages: SoftwareItem[];
   user: UserConfig;
@@ -65,13 +69,13 @@ export interface Profile {
 }
 
 export const DEFAULT_PROFILE: Profile = {
-  os: "ubuntu2204",
-  hostname: "machine01",
+  os: "ubuntu2404",
+  hostname: "",
   packages: [],
   user: { name: "admin", sudo: true },
   network: { mode: "dhcp" },
   security: { ufw: false },
-  system: { locale: "en_US.UTF-8", timezone: "UTC", enable_tpm: false, ntp: true },
+  system: { locale: "", timezone: "", enable_tpm: false, ntp: false },
   custom_scripts: [],
   disabled_sections: [],
 };

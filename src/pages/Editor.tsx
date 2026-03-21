@@ -1,46 +1,69 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { Profile, CustomScript, DEFAULT_PROFILE, SoftwareItem } from "../types";
+import { Profile, CustomScript, DEFAULT_PROFILE, SoftwareItem, TaskType } from "../types";
 import { Select } from "../components/Select";
 
-const TABS = ["System", "Software", "User", "Network", "Security", "Autostart", "Scripts"] as const;
+const TABS = ["System", "Software", "User", "Network", "Security", "Scripts"] as const;
 type Tab = (typeof TABS)[number];
 
-const DISABLEABLE: Tab[] = ["System", "Software", "User", "Network", "Security", "Autostart"];
+const DISABLEABLE: Tab[] = ["System", "Software", "User", "Network", "Security"];
 const SECTION_KEY: Record<string, string> = {
   System: "system", Software: "packages", User: "user",
-  Network: "network", Security: "security", Autostart: "autostart",
+  Network: "network", Security: "security",
 };
 
 const SOFTWARE_PRESETS_DEB: SoftwareItem[] = [
-  { name: "python3", commands: ["apt-get install -y python3"] },
-  { name: "git",     commands: ["apt-get install -y git"] },
-  { name: "vim",     commands: ["apt-get install -y vim"] },
-  { name: "curl",    commands: ["apt-get install -y curl"] },
-  { name: "wget",    commands: ["apt-get install -y wget"] },
-  { name: "htop",    commands: ["apt-get install -y htop"] },
-  { name: "net-tools", commands: ["apt-get install -y net-tools"] },
-  { name: "nginx",   commands: ["apt-get install -y nginx", "systemctl enable nginx"] },
-  { name: "openssh-server", commands: ["apt-get install -y openssh-server", "systemctl enable ssh"] },
-  { name: "Docker",  commands: ["apt-get install -y ca-certificates curl gnupg", "curl -fsSL https://get.docker.com | sh", "systemctl enable docker"] },
-  { name: "Node.js 20", commands: ["curl -fsSL https://deb.nodesource.com/setup_20.x | bash -", "apt-get install -y nodejs"] },
-  { name: "ufw",     commands: ["apt-get install -y ufw"] },
+  { name: "python3",       task_type: "package", commands: ["apt-get install -y python3"] },
+  { name: "git",           task_type: "package", commands: ["apt-get install -y git"] },
+  { name: "vim",           task_type: "package", commands: ["apt-get install -y vim"] },
+  { name: "curl",          task_type: "package", commands: ["apt-get install -y curl"] },
+  { name: "wget",          task_type: "package", commands: ["apt-get install -y wget"] },
+  { name: "htop",          task_type: "package", commands: ["apt-get install -y htop"] },
+  { name: "net-tools",     task_type: "package", commands: ["apt-get install -y net-tools"] },
+  { name: "nginx",         task_type: "package", commands: ["apt-get install -y nginx", "systemctl enable nginx"] },
+  { name: "openssh-server",task_type: "package", commands: ["apt-get install -y openssh-server", "systemctl enable ssh"] },
+  { name: "Docker",        task_type: "package", check_cmd: "command -v docker", commands: ["apt-get install -y ca-certificates curl gnupg", "curl -fsSL https://get.docker.com | sh", "systemctl enable docker"] },
+  { name: "Node.js 20",    task_type: "package", check_cmd: "command -v node", commands: ["curl -fsSL https://deb.nodesource.com/setup_20.x | bash -", "apt-get install -y nodejs"] },
+  { name: "ufw",           task_type: "package", commands: ["apt-get install -y ufw"] },
 ];
 
 const SOFTWARE_PRESETS_ALPINE: SoftwareItem[] = [
-  { name: "python3", commands: ["apk add --quiet python3"] },
-  { name: "git",     commands: ["apk add --quiet git"] },
-  { name: "vim",     commands: ["apk add --quiet vim"] },
-  { name: "curl",    commands: ["apk add --quiet curl"] },
-  { name: "wget",    commands: ["apk add --quiet wget"] },
-  { name: "htop",    commands: ["apk add --quiet htop"] },
-  { name: "net-tools", commands: ["apk add --quiet net-tools"] },
-  { name: "nginx",   commands: ["apk add --quiet nginx", "rc-update add nginx default"] },
-  { name: "openssh", commands: ["apk add --quiet openssh", "rc-update add sshd default"] },
-  { name: "Docker",  commands: ["apk add --quiet docker", "rc-update add docker default"] },
-  { name: "Node.js", commands: ["apk add --quiet nodejs npm"] },
-  { name: "iptables", commands: ["apk add --quiet iptables"] },
+  { name: "python3",  task_type: "package", commands: ["apk add --quiet python3"] },
+  { name: "git",      task_type: "package", commands: ["apk add --quiet git"] },
+  { name: "vim",      task_type: "package", commands: ["apk add --quiet vim"] },
+  { name: "curl",     task_type: "package", commands: ["apk add --quiet curl"] },
+  { name: "wget",     task_type: "package", commands: ["apk add --quiet wget"] },
+  { name: "htop",     task_type: "package", commands: ["apk add --quiet htop"] },
+  { name: "net-tools",task_type: "package", commands: ["apk add --quiet net-tools"] },
+  { name: "nginx",    task_type: "package", commands: ["apk add --quiet nginx", "rc-update add nginx default"] },
+  { name: "openssh",  task_type: "package", commands: ["apk add --quiet openssh", "rc-update add sshd default"] },
+  { name: "Docker",   task_type: "package", check_cmd: "command -v docker", commands: ["apk add --quiet docker", "rc-update add docker default"] },
+  { name: "Node.js",  task_type: "package", check_cmd: "command -v node", commands: ["apk add --quiet nodejs npm"] },
+  { name: "iptables", task_type: "package", commands: ["apk add --quiet iptables"] },
+];
+
+const SOFTWARE_PRESETS_WIN: SoftwareItem[] = [
+  { name: "git",             task_type: "package", check_cmd: "git --version", commands: ["winget install --id Git.Git -e --silent"] },
+  { name: "python3",         task_type: "package", check_cmd: "python --version", commands: ["winget install --id Python.Python.3.12 -e --silent"] },
+  { name: "nodejs",          task_type: "package", check_cmd: "node --version", commands: ["winget install --id OpenJS.NodeJS.LTS -e --silent"] },
+  { name: "notepadplusplus", task_type: "package", commands: ["winget install --id Notepad++.Notepad++ -e --silent"] },
+  { name: "7zip",            task_type: "package", commands: ["winget install --id 7zip.7zip -e --silent"] },
+  { name: "googlechrome",    task_type: "package", commands: ["winget install --id Google.Chrome -e --silent"] },
+  { name: "vlc",             task_type: "package", commands: ["winget install --id VideoLAN.VLC -e --silent"] },
+  { name: "docker-desktop",  task_type: "package", check_cmd: "docker --version", commands: ["winget install --id Docker.DockerDesktop -e --silent"] },
+  { name: "winscp",          task_type: "package", commands: ["winget install --id WinSCP.WinSCP -e --silent"] },
+  { name: "putty",           task_type: "package", commands: ["winget install --id PuTTY.PuTTY -e --silent"] },
+  { name: "openssh-server",  task_type: "service", check_cmd: "(Get-Service sshd -ErrorAction SilentlyContinue).Status -eq 'Running'", commands: ["Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0", "Start-Service sshd", "Set-Service -Name sshd -StartupType Automatic"] },
+  { name: "wuauserv (Windows Update)", task_type: "service", commands: ["Set-Service wuauserv -StartupType Automatic", "Start-Service wuauserv"] },
+];
+
+const TASK_TYPE_OPTIONS = [
+  { value: "package", label: "Package" },
+  { value: "service", label: "Service" },
+  { value: "user",    label: "User" },
+  { value: "file",    label: "File" },
+  { value: "command", label: "Command" },
 ];
 
 const TIMEZONES = [
@@ -64,8 +87,13 @@ export default function Editor() {
   const [profileName, setProfileName] = useState(routeName && !isDuplicate ? routeName : "");
   const [originalName] = useState(routeName || "");
   const [saving, setSaving] = useState(false);
-  const isAlpine = profile.os === "alpine318";
-  const softwarePresets = isAlpine ? SOFTWARE_PRESETS_ALPINE : SOFTWARE_PRESETS_DEB;
+  const isAlpine   = profile.os === "alpine318";
+  const isWindows  = profile.os.startsWith("windows");
+  const softwarePresets = isWindows
+    ? SOFTWARE_PRESETS_WIN
+    : isAlpine
+    ? SOFTWARE_PRESETS_ALPINE
+    : SOFTWARE_PRESETS_DEB;
 
   useEffect(() => {
     if (routeName) {
@@ -105,11 +133,17 @@ export default function Editor() {
   const addSoftwareItem = (item: SoftwareItem) =>
     update("packages", [...profile.packages, { ...item, commands: [...item.commands] }]);
   const addCustomSoftwareItem = () =>
-    update("packages", [...profile.packages, { name: "", commands: [""] }]);
+    update("packages", [...profile.packages, { name: "", task_type: "command" as TaskType, commands: [""] }]);
   const removeSoftwareItem = (i: number) =>
     update("packages", profile.packages.filter((_, idx) => idx !== i));
   const updateSoftwareName = (i: number, name: string) => {
     const u = [...profile.packages]; u[i] = { ...u[i], name }; update("packages", u);
+  };
+  const updateSoftwareTaskType = (i: number, task_type: TaskType) => {
+    const u = [...profile.packages]; u[i] = { ...u[i], task_type }; update("packages", u);
+  };
+  const updateSoftwareCheckCmd = (i: number, check_cmd: string) => {
+    const u = [...profile.packages]; u[i] = { ...u[i], check_cmd: check_cmd || undefined }; update("packages", u);
   };
   const updateSoftwareCommand = (i: number, ci: number, cmd: string) => {
     const u = [...profile.packages]; const c = [...u[i].commands]; c[ci] = cmd; u[i] = { ...u[i], commands: c }; update("packages", u);
@@ -211,69 +245,114 @@ export default function Editor() {
 
         {/* ── System ─────────────────────────────────────────────────────── */}
         {tab === "System" && sectionWrapper("System",
-          <div className="space-y-4 max-w-lg">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Operating System</label>
-                <Select
-                  value={profile.os}
-                  onChange={(v) => update("os", v as Profile["os"])}
-                  options={[
-                    { value: "ubuntu2404", label: "Ubuntu 24.04" },
-                    { value: "ubuntu2204", label: "Ubuntu 22.04" },
-                    { value: "debian11",   label: "Debian 11" },
-                    { value: "alpine318",  label: "Alpine 3.18" },
-                  ]}
-                />
-              </div>
+          <div className="space-y-3 max-w-lg">
+            {/* OS — always visible */}
+            <div>
+              <label className={labelCls}>Operating System</label>
+              <Select
+                value={profile.os}
+                onChange={(v) => update("os", v as Profile["os"])}
+                options={[
+                  { value: "ubuntu2404",  label: "Ubuntu 24.04" },
+                  { value: "ubuntu2204",  label: "Ubuntu 22.04" },
+                  { value: "debian11",    label: "Debian 11" },
+                  { value: "alpine318",   label: "Alpine 3.18" },
+                  { value: "windows2022", label: "Windows Server 2022" },
+                  { value: "windows2019", label: "Windows Server 2019" },
+                  { value: "windows11",   label: "Windows 11 Pro" },
+                  { value: "windows10",   label: "Windows 10 Pro" },
+                ]}
+              />
+            </div>
+
+            <div className="border-t border-surface-500 pt-4 space-y-4">
+              {/* Hostname */}
               <div>
                 <label className={labelCls}>Hostname</label>
-                <input value={profile.hostname} onChange={(e) => update("hostname", e.target.value)} className={inputCls} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Locale</label>
-                <Select
-                  value={profile.system.locale}
-                  onChange={(v) => update("system", { ...profile.system, locale: v })}
-                  options={LOCALES.map((l) => ({ value: l, label: l }))}
-                />
-                {profile.os === "alpine318" && <p className="text-xs text-amber-400 mt-1">Alpine uses musl libc — locale support is limited</p>}
-              </div>
-              <div>
-                <label className={labelCls}>Timezone</label>
-                <Select
-                  value={profile.system.timezone}
-                  onChange={(v) => update("system", { ...profile.system, timezone: v })}
-                  options={TIMEZONES.map((tz) => ({ value: tz, label: tz }))}
+                <input
+                  value={profile.hostname}
+                  onChange={(e) => update("hostname", e.target.value)}
+                  className={inputCls}
+                  placeholder="— No change —"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Swap (MB)</label>
-                <input type="number" value={profile.system.swap_mb ?? ""}
-                  onChange={(e) => update("system", { ...profile.system, swap_mb: e.target.value ? parseInt(e.target.value) : undefined })}
-                  placeholder="e.g. 2048" className={inputCls} />
-                <p className={hintCls}>Leave empty to skip swap creation</p>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Locale */}
+                <div>
+                  <label className={labelCls}>Locale</label>
+                  <Select
+                    value={profile.system.locale}
+                    onChange={(v) => update("system", { ...profile.system, locale: v })}
+                    options={[
+                      { value: "", label: "— No change —" },
+                      ...LOCALES.map((l) => ({ value: l, label: l })),
+                    ]}
+                  />
+                  {isAlpine && profile.system.locale && (
+                    <p className="text-xs text-amber-400 mt-1">Alpine: musl libc — limited locale support</p>
+                  )}
+                </div>
+
+                {/* Timezone */}
+                <div>
+                  <label className={labelCls}>Timezone</label>
+                  <Select
+                    value={profile.system.timezone}
+                    onChange={(v) => update("system", { ...profile.system, timezone: v })}
+                    options={[
+                      { value: "", label: "— No change —" },
+                      ...TIMEZONES.map((tz) => ({ value: tz, label: tz })),
+                    ]}
+                  />
+                </div>
               </div>
-              <div>
-                <label className={labelCls}>{profile.os === "alpine318" ? "Extlinux timeout (1/10s)" : "GRUB timeout (sec)"}</label>
-                <input type="number" value={profile.system.grub_timeout ?? ""}
-                  onChange={(e) => update("system", { ...profile.system, grub_timeout: e.target.value ? parseInt(e.target.value) : undefined })}
-                  placeholder="e.g. 5" className={inputCls} />
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Swap */}
+                <div>
+                  <label className={labelCls}>Swap (MB)</label>
+                  <input
+                    type="number"
+                    value={profile.system.swap_mb ?? ""}
+                    onChange={(e) => update("system", { ...profile.system, swap_mb: e.target.value ? parseInt(e.target.value) : undefined })}
+                    placeholder="— No change —"
+                    className={inputCls}
+                  />
+                </div>
+
+                {/* GRUB / Extlinux timeout */}
+                {!isWindows && (
+                  <div>
+                    <label className={labelCls}>{isAlpine ? "Extlinux timeout (×100ms)" : "GRUB timeout (sec)"}</label>
+                    <input
+                      type="number"
+                      value={profile.system.grub_timeout ?? ""}
+                      onChange={(e) => update("system", { ...profile.system, grub_timeout: e.target.value ? parseInt(e.target.value) : undefined })}
+                      placeholder="— No change —"
+                      className={inputCls}
+                    />
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={profile.system.ntp} onChange={(e) => update("system", { ...profile.system, ntp: e.target.checked })} className="rounded accent-primary-500" />
-                <span className="text-sm text-surface-100">Enable NTP time synchronization</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={profile.system.enable_tpm} onChange={(e) => update("system", { ...profile.system, enable_tpm: e.target.checked })} className="rounded accent-primary-500" />
-                <span className="text-sm text-surface-100">Enable TPM 2.0 support</span>
-              </label>
+
+              {/* Checkboxes — NTP / TPM (genuinely boolean, no "no change" concept) */}
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={profile.system.ntp}
+                    onChange={(e) => update("system", { ...profile.system, ntp: e.target.checked })}
+                    className="rounded accent-primary-500" />
+                  <span className="text-sm text-surface-100">Enable NTP time synchronization</span>
+                </label>
+                {!isWindows && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={profile.system.enable_tpm}
+                      onChange={(e) => update("system", { ...profile.system, enable_tpm: e.target.checked })}
+                      className="rounded accent-primary-500" />
+                    <span className="text-sm text-surface-100">Enable TPM 2.0 support</span>
+                  </label>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -285,12 +364,14 @@ export default function Editor() {
               <p className="text-sm text-surface-200 mb-3">Quick add from presets:</p>
               <div className="flex flex-wrap gap-2">
                 {softwarePresets.map((preset) => {
-                  const added = profile.packages.some((p) => p.name === preset.name);
+                  const addedIdx = profile.packages.findIndex((p) => p.name === preset.name);
+                  const added = addedIdx !== -1;
                   return (
-                    <button key={preset.name} onClick={() => !added && addSoftwareItem(preset)} disabled={added}
+                    <button key={preset.name}
+                      onClick={() => added ? removeSoftwareItem(addedIdx) : addSoftwareItem(preset)}
                       className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                         added
-                          ? "border-primary-600/40 bg-primary-600/10 text-primary-400 cursor-default"
+                          ? "border-primary-600/40 bg-primary-600/10 text-primary-400 hover:bg-red-900/20 hover:border-red-500/40 hover:text-red-400"
                           : "border-surface-500 text-surface-100 hover:bg-surface-600 hover:border-surface-400 cursor-pointer"
                       }`}>
                       {added ? "✓ " : ""}{preset.name}
@@ -314,20 +395,43 @@ export default function Editor() {
                 <div className="space-y-3">
                   {profile.packages.map((item, i) => (
                     <div key={i} className="border border-surface-500 rounded-xl p-4 bg-surface-800">
-                      <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center gap-2 mb-3">
                         <input value={item.name} onChange={(e) => updateSoftwareName(i, e.target.value)}
                           placeholder="Package / tool name"
                           className="flex-1 input font-medium" />
+                        <div className="w-32">
+                          <Select
+                            value={item.task_type}
+                            onChange={(v) => updateSoftwareTaskType(i, v as TaskType)}
+                            options={TASK_TYPE_OPTIONS}
+                          />
+                        </div>
                         <button onClick={() => removeSoftwareItem(i)}
                           className="px-2 py-1.5 text-sm text-red-400 hover:bg-red-900/20 rounded-lg transition-colors">
                           Remove
                         </button>
                       </div>
+                      {item.task_type !== "command" && (
+                        <div className="mb-2">
+                          <input
+                            value={item.check_cmd ?? ""}
+                            onChange={(e) => updateSoftwareCheckCmd(i, e.target.value)}
+                            placeholder={
+                              item.task_type === "package" ? "Check cmd (e.g. command -v vim) — auto if empty" :
+                              item.task_type === "service" ? "Check cmd (e.g. systemctl is-active nginx) — auto if empty" :
+                              item.task_type === "user"    ? "Check cmd (e.g. id username) — auto if empty" :
+                              item.task_type === "file"    ? "File path to check (e.g. /etc/app.conf) — auto if empty" :
+                              "Custom idempotency check command"
+                            }
+                            className="w-full input font-mono text-xs text-surface-300"
+                          />
+                        </div>
+                      )}
                       <div className="space-y-2">
                         {item.commands.map((cmd, ci) => (
                           <div key={ci} className="flex gap-2">
                             <input value={cmd} onChange={(e) => updateSoftwareCommand(i, ci, e.target.value)}
-                              placeholder="e.g. apt-get install -y vim"
+                              placeholder={isWindows ? "e.g. winget install --id Git.Git -e --silent" : "e.g. apt-get install -y vim"}
                               className="flex-1 input font-mono text-xs" />
                             {item.commands.length > 1 && (
                               <button onClick={() => removeSoftwareCommand(i, ci)}
@@ -397,30 +501,15 @@ export default function Editor() {
           <div className="space-y-4 max-w-md">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={profile.security.ufw} onChange={(e) => update("security", { ...profile.security, ufw: e.target.checked })} className="rounded accent-primary-500" />
-              <span className="text-sm text-surface-100">{profile.os === "alpine318" ? "Enable iptables firewall" : "Enable UFW firewall"}</span>
+              <span className="text-sm text-surface-100">
+                {isAlpine ? "Enable iptables firewall" : isWindows ? "Enable Windows Defender Firewall" : "Enable UFW firewall"}
+              </span>
             </label>
             <div>
               <label className={labelCls}>SSH Public Key</label>
               <textarea value={profile.security.ssh_key || ""} onChange={(e) => update("security", { ...profile.security, ssh_key: e.target.value || undefined })}
                 placeholder="ssh-rsa AAAA..." rows={3}
                 className="input w-full font-mono resize-none" />
-            </div>
-          </div>
-        )}
-
-        {/* ── Autostart ──────────────────────────────────────────────────── */}
-        {tab === "Autostart" && sectionWrapper("Autostart",
-          <div className="space-y-4 max-w-md">
-            <div>
-              <label className={labelCls}>Startup script path</label>
-              <input value={profile.autostart || ""} onChange={(e) => update("autostart", e.target.value || undefined)}
-                placeholder="/opt/myapp/start.sh" className="input w-full font-mono" />
-              <p className={hintCls}>
-                {profile.os === "alpine318"
-                  ? "Will be registered as an OpenRC service running at boot."
-                  : "Will be registered as a systemd service running at boot."}
-                {" "}For custom scripts, use the Scripts tab instead.
-              </p>
             </div>
           </div>
         )}
@@ -473,10 +562,14 @@ export default function Editor() {
                     </div>
                     <p className={hintCls}>
                       {script.mode === "run_once"
-                        ? "This script will execute once during provisioning, then be removed."
-                        : profile.os === "alpine318"
-                        ? "This script will be installed to /opt/easix/scripts/ and registered as an OpenRC service."
-                        : "This script will be installed to /opt/easix/scripts/ and registered as a systemd service."}
+                        ? isWindows
+                          ? "Script runs once as a temporary .ps1 file, then is removed."
+                          : "Script runs once during provisioning, then is removed."
+                        : isAlpine
+                        ? "Installed to /opt/easix/scripts/ and registered as an OpenRC service."
+                        : isWindows
+                        ? "Saved to C:\\easix\\scripts\\ and registered as a Scheduled Task at startup."
+                        : "Installed to /opt/easix/scripts/ and registered as a systemd service."}
                     </p>
                   </div>
                 ))}

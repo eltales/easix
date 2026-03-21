@@ -6,28 +6,48 @@ use tera::{Context, Tera};
 
 use crate::models::Profile;
 
-const TEMPLATE: &str = include_str!("../../templates/provision.sh.tera");
+const TEMPLATE_SH:  &str = include_str!("../../templates/provision.sh.tera");
+const TEMPLATE_PS1: &str = include_str!("../../templates/provision.ps1.tera");
 
-fn build_tera() -> Result<Tera, String> {
+fn is_windows_os(os: &str) -> bool {
+    os.starts_with("windows")
+}
+
+fn is_no_os(os: &str) -> bool {
+    os == "none"
+}
+
+fn build_tera(windows: bool) -> Result<(Tera, &'static str), String> {
     let mut tera = Tera::default();
-    tera.add_raw_template("provision.sh", TEMPLATE)
-        .map_err(|e| format!("Template error: {e}"))?;
-    Ok(tera)
+    if windows {
+        tera.add_raw_template("provision.ps1", TEMPLATE_PS1)
+            .map_err(|e| format!("Template error: {e}"))?;
+        Ok((tera, "provision.ps1"))
+    } else {
+        tera.add_raw_template("provision.sh", TEMPLATE_SH)
+            .map_err(|e| format!("Template error: {e}"))?;
+        Ok((tera, "provision.sh"))
+    }
 }
 
 #[command]
 pub fn generate_script(profile: Profile) -> Result<String, String> {
-    let tera = build_tera()?;
+    if is_no_os(&profile.os) {
+        return Err("No OS selected. Please choose a target operating system in the System tab.".into());
+    }
+    let win = is_windows_os(&profile.os);
+    let (tera, tpl) = build_tera(win)?;
     let mut ctx = Context::new();
-    ctx.insert("dis_system", &profile.disabled_sections.contains(&"system".to_string()));
+    ctx.insert("dis_system",   &profile.disabled_sections.contains(&"system".to_string()));
     ctx.insert("dis_packages", &profile.disabled_sections.contains(&"packages".to_string()));
-    ctx.insert("dis_user", &profile.disabled_sections.contains(&"user".to_string()));
-    ctx.insert("dis_network", &profile.disabled_sections.contains(&"network".to_string()));
+    ctx.insert("dis_user",     &profile.disabled_sections.contains(&"user".to_string()));
+    ctx.insert("dis_network",  &profile.disabled_sections.contains(&"network".to_string()));
     ctx.insert("dis_security", &profile.disabled_sections.contains(&"security".to_string()));
-    ctx.insert("dis_autostart", &profile.disabled_sections.contains(&"autostart".to_string()));
-    ctx.insert("is_alpine", &(profile.os == "alpine318"));
-    ctx.insert("profile", &profile);
-    tera.render("provision.sh", &ctx)
+    ctx.insert("dis_autostart",&profile.disabled_sections.contains(&"autostart".to_string()));
+    ctx.insert("is_alpine",    &(profile.os == "alpine318"));
+    ctx.insert("is_windows",   &win);
+    ctx.insert("profile",      &profile);
+    tera.render(tpl, &ctx)
         .map_err(|e| format!("Render error: {e}"))
 }
 
@@ -65,11 +85,17 @@ pub async fn export_script(
     script: String,
     default_name: String,
 ) -> Result<Option<String>, String> {
+    let is_ps1 = default_name.ends_with(".ps1");
+    let (filter_name, ext) = if is_ps1 {
+        ("PowerShell Script", "ps1")
+    } else {
+        ("Shell Script", "sh")
+    };
     let path = app
         .dialog()
         .file()
         .set_file_name(&default_name)
-        .add_filter("Shell Script", &["sh"])
+        .add_filter(filter_name, &[ext])
         .blocking_save_file();
 
     match path {
@@ -151,8 +177,8 @@ mod tests {
     fn test_generate_with_packages_contains_commands() {
         let mut p = base_profile();
         p.packages = vec![
-            SoftwareItem { name: "vim".into(), commands: vec!["apt-get install -y vim".into()] },
-            SoftwareItem { name: "git".into(), commands: vec!["apt-get install -y git".into()] },
+            SoftwareItem { name: "vim".into(), task_type: "package".into(), commands: vec!["apt-get install -y vim".into()], check_cmd: None },
+            SoftwareItem { name: "git".into(), task_type: "package".into(), commands: vec!["apt-get install -y git".into()], check_cmd: None },
         ];
         let script = generate_script(p).unwrap();
         assert!(script.contains("apt-get install -y vim"));
@@ -172,6 +198,8 @@ mod tests {
         let mut p = base_profile();
         p.packages = vec![SoftwareItem {
             name: "Docker".into(),
+            task_type: "package".into(),
+            check_cmd: Some("command -v docker".into()),
             commands: vec![
                 "apt-get install -y ca-certificates curl gnupg".into(),
                 "curl -fsSL https://get.docker.com | sh".into(),
@@ -222,7 +250,9 @@ mod tests {
         p.os = "alpine318".into();
         p.packages = vec![SoftwareItem {
             name: "vim".into(),
+            task_type: "package".into(),
             commands: vec!["apk add --quiet vim".into()],
+            check_cmd: None,
         }];
         let script = generate_script(p).unwrap();
         assert!(script.contains("apk add --quiet vim"));
@@ -234,7 +264,9 @@ mod tests {
         let mut p = base_profile();
         p.packages = vec![SoftwareItem {
             name: "vim".into(),
+            task_type: "package".into(),
             commands: vec!["apt-get install -y vim".into()],
+            check_cmd: None,
         }];
         p.disabled_sections = vec!["packages".into()];
         let script = generate_script(p).unwrap();
@@ -319,5 +351,86 @@ mod tests {
         let script = generate_script(p).unwrap();
         assert!(script.contains("#!/bin/sh"), "Alpine script should use #!/bin/sh");
         assert!(!script.contains("#!/usr/bin/env bash"), "Alpine script should not use bash shebang");
+    }
+
+    #[test]
+    fn test_generate_windows_returns_powershell() {
+        let mut p = base_profile();
+        p.os = "windows2022".into();
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("#Requires -Version 5.1"), "Windows should generate PowerShell");
+        assert!(script.contains("Write-Host"), "Windows script should use Write-Host");
+        assert!(!script.contains("#!/"), "Windows script should not have bash shebang");
+    }
+
+    #[test]
+    fn test_generate_windows_package_idempotent() {
+        let mut p = base_profile();
+        p.os = "windows2022".into();
+        p.packages = vec![SoftwareItem {
+            name: "git".into(),
+            task_type: "package".into(),
+            commands: vec!["winget install --id Git.Git -e --silent".into()],
+            check_cmd: None,
+        }];
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("winget install --id Git.Git"));
+        assert!(script.contains("Get-Command"));
+        assert!(script.contains("_easixSkip"));
+    }
+
+    #[test]
+    fn test_generate_linux_package_idempotent_dpkg_check() {
+        let mut p = base_profile();
+        p.packages = vec![SoftwareItem {
+            name: "nginx".into(),
+            task_type: "package".into(),
+            commands: vec!["apt-get install -y nginx".into()],
+            check_cmd: None,
+        }];
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("dpkg -l"));
+        assert!(script.contains("_easix_skip"));
+        assert!(script.contains("[SKIP]"));
+    }
+
+    #[test]
+    fn test_generate_linux_custom_check_cmd_overrides_default() {
+        let mut p = base_profile();
+        p.packages = vec![SoftwareItem {
+            name: "Docker".into(),
+            task_type: "package".into(),
+            commands: vec!["curl -fsSL https://get.docker.com | sh".into()],
+            check_cmd: Some("command -v docker".into()),
+        }];
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("command -v docker"));
+        assert!(!script.contains("dpkg -l"));
+    }
+
+    #[test]
+    fn test_generate_linux_service_check() {
+        let mut p = base_profile();
+        p.packages = vec![SoftwareItem {
+            name: "nginx".into(),
+            task_type: "service".into(),
+            commands: vec!["systemctl start nginx".into()],
+            check_cmd: None,
+        }];
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("systemctl is-active"));
+    }
+
+    #[test]
+    fn test_generate_linux_user_check() {
+        let mut p = base_profile();
+        p.packages = vec![SoftwareItem {
+            name: "deploy".into(),
+            task_type: "user".into(),
+            commands: vec!["useradd -m deploy".into()],
+            check_cmd: None,
+        }];
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("id \"deploy\""));
     }
 }

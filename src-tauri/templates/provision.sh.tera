@@ -34,6 +34,7 @@ echo "=== Easix provisioning started ==="
 {% endif %}
 
 {% if not dis_system %}
+{% if profile.hostname %}
 # --- Hostname ---
 echo "[STEP] Hostname: setting to {{ profile.hostname }}..."
 {% if is_alpine %}
@@ -45,7 +46,9 @@ sed -i "s/127\.0\.1\.1.*/127.0.1.1\t{{ profile.hostname }}/" /etc/hosts || \
 hostnamectl set-hostname "{{ profile.hostname }}"
 {% endif %}
 echo "[OK] Hostname: {{ profile.hostname }}"
+{% endif %}
 
+{% if profile.system.locale %}
 # --- Locale ---
 {% if is_alpine %}
 echo "[STEP] Locale: setting environment to {{ profile.system.locale }} (musl — limited support)..."
@@ -60,7 +63,9 @@ locale-gen "{{ profile.system.locale }}" || true
 update-locale LANG="{{ profile.system.locale }}"
 {% endif %}
 echo "[OK] Locale: {{ profile.system.locale }}"
+{% endif %}
 
+{% if profile.system.timezone %}
 # --- Timezone ---
 echo "[STEP] Timezone: setting to {{ profile.system.timezone }}..."
 {% if is_alpine %}
@@ -71,6 +76,7 @@ echo "{{ profile.system.timezone }}" > /etc/timezone
 timedatectl set-timezone "{{ profile.system.timezone }}"
 {% endif %}
 echo "[OK] Timezone: {{ profile.system.timezone }}"
+{% endif %}
 
 {% if profile.system.ntp %}
 # --- NTP ---
@@ -173,12 +179,42 @@ echo "[OK] Packages: lists updated"
 {% if profile.packages | length > 0 %}
 # --- Software installation ---
 {% for item in profile.packages %}
-# --- {{ item.name }} ---
-echo "[STEP] Software: {{ item.name }}..."
+# --- {{ item.name }} [{{ item.task_type }}] ---
+echo "[STEP] {{ item.task_type }}: {{ item.name }}..."
+{% if item.check_cmd %}
+_easix_skip=false
+if {{ item.check_cmd }} >/dev/null 2>&1; then _easix_skip=true; fi
+{% elif item.task_type == "package" %}
+_easix_skip=false
+{% if is_alpine %}
+if apk info -e "{{ item.name }}" 2>/dev/null; then _easix_skip=true; fi
+{% else %}
+if dpkg -l "{{ item.name }}" 2>/dev/null | grep -q "^ii"; then _easix_skip=true; fi
+{% endif %}
+{% elif item.task_type == "service" %}
+_easix_skip=false
+{% if is_alpine %}
+if rc-service "{{ item.name }}" status >/dev/null 2>&1; then _easix_skip=true; fi
+{% else %}
+if systemctl is-active --quiet "{{ item.name }}" 2>/dev/null; then _easix_skip=true; fi
+{% endif %}
+{% elif item.task_type == "user" %}
+_easix_skip=false
+if id "{{ item.name }}" >/dev/null 2>&1; then _easix_skip=true; fi
+{% elif item.task_type == "file" %}
+_easix_skip=false
+if [ -f "{{ item.name }}" ]; then _easix_skip=true; fi
+{% else %}
+_easix_skip=false
+{% endif %}
+if [ "$_easix_skip" = "true" ]; then
+  echo "[SKIP] {{ item.name }}: already in desired state"
+else
 {% for cmd in item.commands %}
-{{ cmd }} || { echo "[ERROR] {{ item.name }}: step failed ({{ cmd }})"; exit 1; }
+  {{ cmd }} || { echo "[ERROR] {{ item.name }}: step failed"; exit 1; }
 {% endfor %}
-echo "[OK] Software: {{ item.name }}"
+  echo "[OK] {{ item.name }}"
+fi
 {% endfor %}
 {% endif %}
 {% endif %}

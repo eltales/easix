@@ -1,0 +1,159 @@
+#Requires -Version 5.1
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# =============================================================================
+# Easix provisioning script (Windows PowerShell)
+# Generated for: {{ profile.hostname }} ({{ profile.os }})
+# =============================================================================
+
+Write-Host "=== Easix provisioning started ===" -ForegroundColor Cyan
+
+{% if not dis_system %}
+{% if profile.hostname %}
+# --- Hostname ---
+Write-Host "[STEP] Hostname: setting to {{ profile.hostname }}..."
+if ((hostname) -ne "{{ profile.hostname }}") {
+    Rename-Computer -NewName "{{ profile.hostname }}" -Force -ErrorAction SilentlyContinue
+    Write-Host "[OK] Hostname: {{ profile.hostname }} (reboot required to take effect)"
+} else {
+    Write-Host "[SKIP] Hostname: already {{ profile.hostname }}"
+}
+{% endif %}
+
+{% if profile.system.timezone %}
+# --- Timezone ---
+Write-Host "[STEP] Timezone: setting to {{ profile.system.timezone }}..."
+$_tz = "{{ profile.system.timezone }}"
+$_tzMap = @{
+    "UTC"             = "UTC"
+    "Europe/Warsaw"   = "Central European Standard Time"
+    "Europe/London"   = "GMT Standard Time"
+    "Europe/Berlin"   = "W. Europe Standard Time"
+    "Europe/Paris"    = "Romance Standard Time"
+    "America/New_York"= "Eastern Standard Time"
+    "America/Chicago" = "Central Standard Time"
+    "America/Denver"  = "Mountain Standard Time"
+    "America/Los_Angeles" = "Pacific Standard Time"
+    "Asia/Tokyo"      = "Tokyo Standard Time"
+    "Asia/Shanghai"   = "China Standard Time"
+    "Australia/Sydney"= "AUS Eastern Standard Time"
+}
+$_winTz = if ($_tzMap.ContainsKey($_tz)) { $_tzMap[$_tz] } else { "UTC" }
+try { Set-TimeZone -Name $_winTz -ErrorAction Stop; Write-Host "[OK] Timezone: $_winTz" }
+catch { Write-Host "[WARN] Timezone: could not set '$_winTz'" -ForegroundColor Yellow }
+{% endif %}
+
+{% if profile.system.ntp %}
+# --- NTP ---
+Write-Host "[STEP] NTP: configuring Windows Time service..."
+if ((Get-Service w32tm -ErrorAction SilentlyContinue).Status -ne "Running") {
+    Start-Service w32tm -ErrorAction SilentlyContinue
+    Set-Service w32tm -StartupType Automatic
+}
+w32tm /config /manualpeerlist:"pool.ntp.org" /syncfromflags:manual /update 2>&1 | Out-Null
+Write-Host "[OK] NTP: Windows Time service configured"
+{% endif %}
+{% endif %}
+
+{% if not dis_packages %}
+{% if profile.packages | length > 0 %}
+# --- Software installation ---
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "[WARN] winget not available — install App Installer from Microsoft Store" -ForegroundColor Yellow
+}
+
+{% for item in profile.packages %}
+# --- {{ item.name }} [{{ item.task_type }}] ---
+Write-Host "[STEP] {{ item.task_type }}: {{ item.name }}..."
+{% if item.check_cmd %}
+$_easixSkip = $false
+try { $null = Invoke-Expression "{{ item.check_cmd }}"; if ($LASTEXITCODE -eq 0 -or $?) { $_easixSkip = $true } } catch {}
+{% elif item.task_type == "package" %}
+$_easixSkip = $false
+if (Get-Command "{{ item.name }}" -ErrorAction SilentlyContinue) { $_easixSkip = $true }
+{% elif item.task_type == "service" %}
+$_easixSkip = $false
+if ((Get-Service "{{ item.name }}" -ErrorAction SilentlyContinue).Status -eq "Running") { $_easixSkip = $true }
+{% elif item.task_type == "user" %}
+$_easixSkip = $false
+if (Get-LocalUser "{{ item.name }}" -ErrorAction SilentlyContinue) { $_easixSkip = $true }
+{% elif item.task_type == "file" %}
+$_easixSkip = $false
+if (Test-Path "{{ item.name }}") { $_easixSkip = $true }
+{% else %}
+$_easixSkip = $false
+{% endif %}
+if ($_easixSkip) {
+    Write-Host "[SKIP] {{ item.name }}: already in desired state" -ForegroundColor DarkGray
+} else {
+{% for cmd in item.commands %}
+    Invoke-Expression "{{ cmd }}"
+    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "[ERROR] {{ item.name }}: command failed: {{ cmd }}" }
+{% endfor %}
+    Write-Host "[OK] {{ item.name }}" -ForegroundColor Green
+}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if not dis_user %}
+# --- Local User ---
+Write-Host "[STEP] User: configuring '{{ profile.user.name }}'..."
+if (-not (Get-LocalUser "{{ profile.user.name }}" -ErrorAction SilentlyContinue)) {
+    $pass = ConvertTo-SecureString "ChangeMe123!" -AsPlainText -Force
+    New-LocalUser "{{ profile.user.name }}" -Password $pass -PasswordNeverExpires
+    Write-Host "[OK] User: '{{ profile.user.name }}' created (password: ChangeMe123! — change immediately!)"
+} else {
+    Write-Host "[SKIP] User: '{{ profile.user.name }}' already exists"
+}
+{% if profile.user.sudo %}
+Add-LocalGroupMember -Group "Administrators" -Member "{{ profile.user.name }}" -ErrorAction SilentlyContinue
+Write-Host "[OK] User: '{{ profile.user.name }}' added to Administrators"
+{% endif %}
+{% endif %}
+
+{% if not dis_security %}
+{% if profile.security.ufw %}
+# --- Firewall ---
+Write-Host "[STEP] Firewall: enabling Windows Defender Firewall..."
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
+Write-Host "[OK] Firewall: all profiles enabled"
+{% endif %}
+{% if profile.security.ssh_key %}
+# --- SSH key ---
+Write-Host "[STEP] SSH key: deploying for {{ profile.user.name }}..."
+$_sshDir = "C:\Users\{{ profile.user.name }}\.ssh"
+if (-not (Test-Path $_sshDir)) { New-Item -ItemType Directory -Path $_sshDir -Force | Out-Null }
+Add-Content -Path "$_sshDir\authorized_keys" -Value "{{ profile.security.ssh_key }}"
+Write-Host "[OK] SSH key: deployed to $_sshDir\authorized_keys"
+{% endif %}
+{% endif %}
+
+{% for script in profile.custom_scripts %}
+{% if script.mode == "run_once" %}
+# --- Custom script: {{ script.name }} (run once) ---
+Write-Host "[STEP] Script '{{ script.name }}': executing..."
+$_tmpScript = "$env:TEMP\easix-{{ script.name }}.ps1"
+Set-Content -Path $_tmpScript -Value @'
+{{ script.content }}
+'@
+& $_tmpScript
+Remove-Item -Path $_tmpScript -Force -ErrorAction SilentlyContinue
+Write-Host "[OK] Script '{{ script.name }}': executed and removed"
+{% elif script.mode == "autostart" %}
+# --- Custom script: {{ script.name }} (scheduled task) ---
+Write-Host "[STEP] Script '{{ script.name }}': installing as startup scheduled task..."
+$_scriptPath = "C:\easix\scripts\{{ script.name }}.ps1"
+if (-not (Test-Path "C:\easix\scripts")) { New-Item -ItemType Directory -Path "C:\easix\scripts" -Force | Out-Null }
+Set-Content -Path $_scriptPath -Value @'
+{{ script.content }}
+'@
+$_action  = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -File `"$_scriptPath`""
+$_trigger = New-ScheduledTaskTrigger -AtStartup
+Register-ScheduledTask -TaskName "easix-{{ script.name }}" -Action $_action -Trigger $_trigger -RunLevel Highest -Force | Out-Null
+Write-Host "[OK] Script '{{ script.name }}': registered as scheduled task 'easix-{{ script.name }}'"
+{% endif %}
+{% endfor %}
+
+Write-Host "=== Easix provisioning completed ===" -ForegroundColor Cyan

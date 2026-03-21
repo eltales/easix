@@ -1,0 +1,41 @@
+{
+  "os": "ubuntu2204",
+  "hostname": "machine01",
+  "packages": [
+    "python3",
+    "docker.io"
+  ],
+  "user": {
+    "name": "admin",
+    "sudo": true
+  },
+  "network": {
+    "mode": "static",
+    "address": null,
+    "gateway": null,
+    "dns": null
+  },
+  "security": {
+    "ufw": false,
+    "ssh_key": null
+  },
+  "system": {
+    "locale": "en_US.UTF-8",
+    "timezone": "UTC",
+    "swap_mb": null,
+    "enable_tpm": true,
+    "grub_timeout": null,
+    "ntp": true
+  },
+  "autostart": "/usr/lib/",
+  "custom_scripts": [
+    {
+      "name": "auto",
+      "content": "#!/bin/bash\nsleep 5\necho \"Witaj\"",
+      "mode": "autostart"
+    }
+  ],
+  "disabled_sections": [
+    "user"
+  ]
+}
