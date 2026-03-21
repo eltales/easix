@@ -85,6 +85,8 @@ export default function Editor() {
   const [tab, setTab] = useState<Tab>("System");
   const [profile, setProfile] = useState<Profile>({ ...DEFAULT_PROFILE });
   const [profileName, setProfileName] = useState(routeName && !isDuplicate ? routeName : "");
+  const [swapRaw, setSwapRaw] = useState<string>("");
+  const [grubRaw, setGrubRaw] = useState<string>("");
   const [originalName] = useState(routeName || "");
   const [saving, setSaving] = useState(false);
   const isAlpine   = profile.os === "alpine318";
@@ -98,7 +100,10 @@ export default function Editor() {
   useEffect(() => {
     if (routeName) {
       api.getProfile(routeName).then((p) => {
-        setProfile({ ...p, custom_scripts: p.custom_scripts || [], disabled_sections: p.disabled_sections || [], system: p.system || DEFAULT_PROFILE.system });
+        const sys = p.system || DEFAULT_PROFILE.system;
+        setProfile({ ...p, custom_scripts: p.custom_scripts || [], disabled_sections: p.disabled_sections || [], system: sys });
+        setSwapRaw(sys.swap_mb !== undefined ? String(sys.swap_mb) : "");
+        setGrubRaw(sys.grub_timeout !== undefined ? String(sys.grub_timeout) : "");
         if (!isDuplicate) setProfileName(routeName);
       });
     }
@@ -316,12 +321,15 @@ export default function Editor() {
                     type="number"
                     min={128}
                     max={65536}
-                    value={profile.system.swap_mb ?? ""}
-                    onChange={(e) => {
-                      if (!e.target.value) { update("system", { ...profile.system, swap_mb: undefined }); return; }
-                      const v = Math.min(65536, Math.max(128, parseInt(e.target.value)));
+                    value={swapRaw}
+                    onChange={(e) => setSwapRaw(e.target.value)}
+                    onBlur={() => {
+                      if (!swapRaw) { update("system", { ...profile.system, swap_mb: undefined }); return; }
+                      const v = Math.min(65536, Math.max(128, parseInt(swapRaw) || 128));
+                      setSwapRaw(String(v));
                       update("system", { ...profile.system, swap_mb: v });
                     }}
+                    onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                     placeholder="— No change —"
                     className={inputCls}
                   />
@@ -336,13 +344,16 @@ export default function Editor() {
                       type="number"
                       min={0}
                       max={isAlpine ? 600 : 60}
-                      value={profile.system.grub_timeout ?? ""}
-                      onChange={(e) => {
-                        if (!e.target.value) { update("system", { ...profile.system, grub_timeout: undefined }); return; }
+                      value={grubRaw}
+                      onChange={(e) => setGrubRaw(e.target.value)}
+                      onBlur={() => {
+                        if (!grubRaw) { update("system", { ...profile.system, grub_timeout: undefined }); return; }
                         const max = isAlpine ? 600 : 60;
-                        const v = Math.min(max, Math.max(0, parseInt(e.target.value)));
+                        const v = Math.min(max, Math.max(0, parseInt(grubRaw) || 0));
+                        setGrubRaw(String(v));
                         update("system", { ...profile.system, grub_timeout: v });
                       }}
+                      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                       placeholder="— No change —"
                       className={inputCls}
                     />
