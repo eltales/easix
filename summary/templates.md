@@ -1,31 +1,53 @@
 # summary/templates.md — Tera szablony
 
----
-
-### Struktura wygenerowanego skryptu
-Added: 2026-02-22 | Task: init
-
-Na podstawie przykładu `LLL.sh`:
-
-1. **Header** — komentarz z nazwą maszyny, dystrybucją, datą
-2. **Hostname** — `hostnamectl set-hostname "{{hostname}}"`
-3. **Update** — `export DEBIAN_FRONTEND=noninteractive && apt-get update -qq`
-4. **Packages** — `apt-get install -y -qq \\ {% for pkg in packages %}  {{pkg}} \\ {% endfor %}`
-5. **Users** — dla każdego usera: `useradd -m -s /bin/bash`, `usermod -aG`
-6. **Network** — jeśli static: zapis do `/etc/netplan/01-easix.yaml` + `netplan apply`
-7. **Custom scripts** — inline bash per skrypt
-8. **Footer** — `echo "=== Easix provisioning completed ==="`
+*Ostatnia aktualizacja: 2026-03-21*
 
 ---
 
-### Uwagi o składni Tera
-Added: 2026-02-22 | Task: init
+## provision.sh.tera (Linux)
 
-- `{% if network.mode == "Static" %}` — warunek
-- `{% for pkg in packages %}` — pętla
-- `{{ variable }}` — interpolacja
-- Tera jest prawie w 100% kompatybilny z Jinja2 dla tego use case
-- Szablon w: `src-tauri/templates/provision.sh.tera`
-- Ładowanie szablonu: `tera::Tera::new()` lub `tera::Tera::one_off()` dla prostych przypadków
+Generowany skrypt bash dla Debian/Ubuntu i Alpine 3.18.
+
+Sekcje warunkowe (dis_* = disabled_sections):
+- dis_system: hostname, locale, timezone, NTP, swap, GRUB, TPM
+- dis_packages: petla per SoftwareItem (name + komendy)
+- dis_user: adduser, sudo, SSH authorized_keys
+- dis_network: /etc/network/interfaces lub netplan, statyczne IP
+- dis_security: UFW, fail2ban, SSH hardening
+- custom_scripts: run_once (jednorazowy) lub autostart (cron/rc.local)
+
+Nowe w 2026-03: hostname/locale/timezone owinięte w if-guard:
+  - hostname wyswietlany tylko jesli profile.hostname niepuste
+  - locale tylko jesli profile.system.locale niepuste
+  - timezone tylko jesli profile.system.timezone niepuste
+
+Rozroznienie OS:
+- is_alpine: apk zamiast apt, ash zamiast bash, rc-update zamiast systemctl
+- is_windows: nigdy (oddzielny szablon)
 
 ---
+
+## provision.ps1.tera (Windows)
+
+PowerShell dla Windows Server 2019/2022 i Windows 10/11.
+
+Sekcje:
+- dis_system: hostname (Rename-Computer), timezone (Set-TimeZone), NTP (w32tm)
+- hostname/timezone owinięte w if-guard (analogicznie do .sh)
+- dis_packages: Chocolatey install per item
+- dis_user: net user /add, net localgroup Administrators
+
+---
+
+## Zmienna kontekstowa
+
+Profile serializowany do JSON -> Tera context:
+- profile.hostname, profile.os
+- profile.system.{locale, timezone, ntp, swap_mb, grub_timeout, enable_tpm}
+- profile.packages: Vec<SoftwareItem { name, commands }>
+- profile.user.{name, sudo, ssh_keys}
+- profile.network.{mode, ip, gateway, dns}
+- profile.security.{ufw, fail2ban, ssh_port, disable_root}
+- profile.custom_scripts: Vec<CustomScript { name, content, mode }>
+- dis_system, dis_packages, dis_user, dis_network, dis_security (bool)
+- is_alpine, is_windows (bool)
