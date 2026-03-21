@@ -465,7 +465,7 @@ export default function Devices() {
                 <Select
                   value={form.os ?? ""}
                   onChange={(v) => setForm({ ...form, os: v || undefined })}
-                  options={[{ value: "", label: "Unknown" }, ...OS_OPTIONS.map((o) => ({ value: o.value, label: `${o.icon} ${o.label}` }))]}
+                  options={[{ value: "", label: "— Unknown —" }, ...OS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))]}
                 />
               </div>
             </div>
