@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tauri::command;
@@ -159,4 +160,112 @@ pub async fn import_profile_esx(app: tauri::AppHandle) -> Result<Option<String>,
         .map_err(|e| format!("Cannot save profile: {e}"))?;
 
     Ok(Some(target_name))
+}
+
+#[command]
+pub async fn export_all_profiles_esx(app: tauri::AppHandle) -> Result<Option<u32>, String> {
+    let dir = profiles_dir()?;
+    let names: Vec<String> = fs::read_dir(&dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| {
+            let e = e.ok()?;
+            let p = e.path();
+            if p.extension()?.to_str()? == "json" {
+                Some(p.file_stem()?.to_str()?.to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if names.is_empty() {
+        return Err("No profiles to export".into());
+    }
+
+    let mut profiles: HashMap<String, Profile> = HashMap::new();
+    for name in &names {
+        let content = fs::read_to_string(dir.join(format!("{name}.json")))
+            .map_err(|e| format!("Cannot read '{name}': {e}"))?;
+        let profile: Profile =
+            serde_json::from_str(&content).map_err(|e| format!("Invalid profile '{name}': {e}"))?;
+        profiles.insert(name.clone(), profile);
+    }
+
+    #[derive(serde::Serialize)]
+    struct Bundle {
+        version: u32,
+        profiles: HashMap<String, Profile>,
+    }
+    let bundle = Bundle { version: 1, profiles };
+    let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
+
+    let save_path = app
+        .dialog()
+        .file()
+        .set_file_name("easix-profiles.esx")
+        .add_filter("Easix Profile Bundle", &["esx"])
+        .blocking_save_file();
+
+    match save_path {
+        Some(p) => {
+            let file_path = p.as_path().ok_or("Invalid path")?;
+            fs::write(file_path, json).map_err(|e| format!("Cannot write file: {e}"))?;
+            Ok(Some(names.len() as u32))
+        }
+        None => Ok(None),
+    }
+}
+
+#[command]
+pub async fn import_all_profiles_esx(app: tauri::AppHandle) -> Result<Option<Vec<String>>, String> {
+    let open_path = app
+        .dialog()
+        .file()
+        .add_filter("Easix Profile / Bundle", &["esx"])
+        .blocking_pick_file();
+
+    let file_path = match open_path {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+    let file_path = file_path.as_path().ok_or("Invalid path")?;
+    let content = fs::read_to_string(file_path).map_err(|e| format!("Cannot read file: {e}"))?;
+
+    // Detect: bundle {"version":1,"profiles":{...}} or single Profile
+    #[derive(serde::Deserialize)]
+    struct Bundle {
+        profiles: HashMap<String, Profile>,
+    }
+
+    let map: HashMap<String, Profile> = if let Ok(bundle) = serde_json::from_str::<Bundle>(&content) {
+        bundle.profiles
+    } else if let Ok(profile) = serde_json::from_str::<Profile>(&content) {
+        let stem = file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("imported")
+            .to_string();
+        let mut m = HashMap::new();
+        m.insert(stem, profile);
+        m
+    } else {
+        return Err("Not a valid .esx profile or bundle".into());
+    };
+
+    let dir = profiles_dir()?;
+    let mut imported = Vec::new();
+    for (stem, profile) in map {
+        let mut target_name = stem.clone();
+        let mut suffix = 1u32;
+        while dir.join(format!("{target_name}.json")).exists() {
+            target_name = format!("{stem}_{suffix:02}");
+            suffix += 1;
+        }
+        let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+        fs::write(dir.join(format!("{target_name}.json")), &json)
+            .map_err(|e| format!("Cannot save '{target_name}': {e}"))?;
+        imported.push(target_name);
+    }
+
+    Ok(Some(imported))
 }

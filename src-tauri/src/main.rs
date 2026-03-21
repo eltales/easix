@@ -19,6 +19,8 @@ fn main() {
             profiles::rename_profile,
             profiles::export_profile_esx,
             profiles::import_profile_esx,
+            profiles::export_all_profiles_esx,
+            profiles::import_all_profiles_esx,
             generator::generate_script,
             generator::validate_script,
             generator::export_script,

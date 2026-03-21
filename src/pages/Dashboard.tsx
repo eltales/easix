@@ -56,7 +56,12 @@ export default function Dashboard() {
   };
 
   const handleImport = async () => {
-    try { const imported = await api.importProfileEsx(); if (imported) load(); }
+    try { const imported = await api.importAllProfilesEsx(); if (imported) load(); }
+    catch (e) { setError(String(e)); }
+  };
+
+  const handleExportAll = async () => {
+    try { await api.exportAllProfilesEsx(); }
     catch (e) { setError(String(e)); }
   };
 
@@ -80,6 +85,12 @@ export default function Dashboard() {
           <p className="text-surface-200 mt-1 text-sm">Manage configuration profiles</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleExportAll}
+            className="border border-surface-500 text-surface-100 px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface-700 hover:border-surface-400 transition-colors"
+          >
+            Export all
+          </button>
           <button
             onClick={handleImport}
             className="border border-surface-500 text-surface-100 px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface-700 hover:border-surface-400 transition-colors"

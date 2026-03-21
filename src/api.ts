@@ -46,6 +46,9 @@ export const api = {
 
   importProfileEsx: () => invoke<string | null>("import_profile_esx"),
 
+  exportAllProfilesEsx: () => invoke<number | null>("export_all_profiles_esx"),
+  importAllProfilesEsx: () => invoke<string[] | null>("import_all_profiles_esx"),
+
   dryRunScript: (script: string) =>
     invoke<string>("dry_run_script", { script }),
 
