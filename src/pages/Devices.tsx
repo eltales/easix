@@ -256,6 +256,8 @@ export default function Devices() {
   const [error, setError]           = useState("");
   const [saving, setSaving]         = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [devicePassword, setDevicePassword]     = useState("");
+  const [hasSavedPassword, setHasSavedPassword] = useState(false);
 
   // ── Group devices ─────────────────────────────────────────────────────────
 
@@ -276,6 +278,7 @@ export default function Devices() {
   const openNew = () => {
     setEditing({ id: generateId(), ...EMPTY });
     setForm(EMPTY); setTagInput(""); setError("");
+    setDevicePassword(""); setHasSavedPassword(false);
   };
 
   const openEdit = (d: Device) => {
@@ -285,6 +288,18 @@ export default function Devices() {
       tags: [...d.tags], description: d.description, color: d.color,
       os: d.os, last_connected: d.last_connected });
     setTagInput(""); setError("");
+    setDevicePassword("");
+    setHasSavedPassword(false);
+    api.getDeviceSecret(d.id).then((saved) => setHasSavedPassword(!!saved));
+  };
+
+  const handleForgetPassword = async () => {
+    if (!editing) return;
+    try {
+      await api.deleteDeviceSecret(editing.id);
+      setHasSavedPassword(false);
+      setDevicePassword("");
+    } catch (e) { setError(String(e)); }
   };
 
   const addTag = () => {
@@ -303,6 +318,9 @@ export default function Devices() {
     setSaving(true);
     try {
       await api.saveDevice({ ...form, id: editing.id });
+      if (form.auth_type === "password" && devicePassword.trim()) {
+        await api.saveDeviceSecret(editing.id, devicePassword.trim());
+      }
       setEditing(null);
       await reload();
     } catch (e) { setError(String(e)); }
@@ -463,6 +481,27 @@ export default function Devices() {
                 <input id="device-key-path" value={form.key_path ?? ""}
                   onChange={(e) => setForm({ ...form, key_path: e.target.value || undefined })}
                   placeholder="~/.ssh/id_rsa" className="input w-full font-mono" />
+              </div>
+            )}
+
+            {form.auth_type === "password" && (
+              <div>
+                <label htmlFor="device-password" className="block text-sm font-medium text-surface-100 mb-1.5">
+                  Password {hasSavedPassword && <span className="text-primary-400 font-normal">(saved in OS keychain)</span>}
+                </label>
+                <div className="flex gap-2">
+                  <input id="device-password" type="password" value={devicePassword}
+                    onChange={(e) => setDevicePassword(e.target.value)}
+                    placeholder={hasSavedPassword ? "Leave empty to keep saved password" : "Not saved — enter to remember"}
+                    className="input w-full font-mono" />
+                  {hasSavedPassword && (
+                    <button type="button" onClick={handleForgetPassword}
+                      className="px-3 py-2 text-xs text-red-400 hover:bg-red-900/20 rounded-lg transition-colors whitespace-nowrap">
+                      Forget
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-surface-300 mt-1">Stored securely in the OS credential store, never in the device JSON file.</p>
               </div>
             )}
 

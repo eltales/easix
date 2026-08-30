@@ -115,6 +115,10 @@ pub struct UserConfig {
     pub name: String,
     #[serde(default = "default_true")]
     pub sudo: bool,
+    /// Windows-only: initial password for the newly created local user.
+    /// Falls back to a generic placeholder when unset.
+    #[serde(default)]
+    pub initial_password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +146,7 @@ impl Default for UserConfig {
         Self {
             name: "admin".into(),
             sudo: true,
+            initial_password: None,
         }
     }
 }
@@ -176,6 +181,12 @@ impl Default for SystemConfig {
             grub_timeout: None,
             ntp: true,
         }
+    }
+}
+
+impl Profile {
+    pub fn is_windows(&self) -> bool {
+        self.os.starts_with("windows")
     }
 }
 

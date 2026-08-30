@@ -415,14 +415,14 @@ export default function Editor() {
                     className="rounded accent-primary-500" />
                   <span className="text-sm text-surface-100">Enable NTP time synchronization</span>
                 </label>
-                {!isWindows && (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={profile.system.enable_tpm}
-                      onChange={(e) => update("system", { ...profile.system, enable_tpm: e.target.checked })}
-                      className="rounded accent-primary-500" />
-                    <span className="text-sm text-surface-100">Enable TPM 2.0 support</span>
-                  </label>
-                )}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={profile.system.enable_tpm}
+                    onChange={(e) => update("system", { ...profile.system, enable_tpm: e.target.checked })}
+                    className="rounded accent-primary-500" />
+                  <span className="text-sm text-surface-100">
+                    {isWindows ? "Verify TPM 2.0 status (required for Windows 11)" : "Enable TPM 2.0 support"}
+                  </span>
+                </label>
               </div>
             </div>
           </div>
@@ -528,6 +528,15 @@ export default function Editor() {
               <input type="checkbox" checked={profile.user.sudo} onChange={(e) => update("user", { ...profile.user, sudo: e.target.checked })} className="rounded accent-primary-500" />
               <span className="text-sm text-surface-100">Grant sudo privileges</span>
             </label>
+            {isWindows && (
+              <div>
+                <label htmlFor="profile-initial-password" className={labelCls}>Initial password (Windows only)</label>
+                <input id="profile-initial-password" type="text" value={profile.user.initial_password ?? ""}
+                  onChange={(e) => update("user", { ...profile.user, initial_password: e.target.value || undefined })}
+                  placeholder="Leave empty for default: ChangeMe123!" className={inputCls} />
+                <p className={hintCls}>Set at user creation. Linux/Alpine users authenticate via SSH key only, no password is set.</p>
+              </div>
+            )}
           </div>
         )}
 

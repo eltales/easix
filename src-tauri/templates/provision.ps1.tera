@@ -21,6 +21,19 @@ if ((hostname) -ne "{{ profile.hostname }}") {
 }
 {% endif %}
 
+{% if win_locale_tag %}
+# --- Locale ---
+Write-Host "[STEP] Locale: setting to {{ win_locale_tag }}..."
+try {
+    Set-WinSystemLocale -SystemLocale "{{ win_locale_tag }}"
+    Set-WinUserLanguageList -LanguageList "{{ win_locale_tag }}" -Force
+    Set-Culture -CultureInfo "{{ win_locale_tag }}"
+    Write-Host "[OK] Locale: {{ win_locale_tag }} (reboot required for system locale to take effect)"
+} catch {
+    Write-Host "[WARN] Locale: could not set '{{ win_locale_tag }}' ($($_.Exception.Message))" -ForegroundColor Yellow
+}
+{% endif %}
+
 {% if profile.system.timezone %}
 # --- Timezone ---
 Write-Host "[STEP] Timezone: setting to {{ profile.system.timezone }}..."
@@ -53,6 +66,51 @@ if ((Get-Service w32tm -ErrorAction SilentlyContinue).Status -ne "Running") {
 }
 w32tm /config /manualpeerlist:"pool.ntp.org" /syncfromflags:manual /update 2>&1 | Out-Null
 Write-Host "[OK] NTP: Windows Time service configured"
+{% endif %}
+
+{% if profile.system.swap_mb %}
+# --- Pagefile (virtual memory) ---
+Write-Host "[STEP] Pagefile: setting size to {{ profile.system.swap_mb }}MB..."
+try {
+    $_computerSys = Get-WmiObject Win32_ComputerSystem -EnableAllPrivileges
+    if ($_computerSys.AutomaticManagedPagefile) {
+        $_computerSys.AutomaticManagedPagefile = $false
+        $_computerSys.Put() | Out-Null
+    }
+    $_pageFile = Get-WmiObject Win32_PageFileSetting | Select-Object -First 1
+    if ($_pageFile) {
+        $_pageFile.InitialSize = {{ profile.system.swap_mb }}
+        $_pageFile.MaximumSize = {{ profile.system.swap_mb }}
+        $_pageFile.Put() | Out-Null
+    } else {
+        Set-WmiInstance -Class Win32_PageFileSetting -Arguments @{
+            Name        = "C:\pagefile.sys"
+            InitialSize = {{ profile.system.swap_mb }}
+            MaximumSize = {{ profile.system.swap_mb }}
+        } | Out-Null
+    }
+    Write-Host "[OK] Pagefile: {{ profile.system.swap_mb }}MB configured (reboot required to take effect)"
+} catch {
+    Write-Host "[WARN] Pagefile: could not configure ($($_.Exception.Message))" -ForegroundColor Yellow
+}
+{% endif %}
+
+{% if profile.system.enable_tpm %}
+# --- TPM 2.0 ---
+Write-Host "[STEP] TPM: verifying status (required for Windows 11)..."
+try {
+    $_tpm = Get-Tpm
+    if ($_tpm.TpmPresent) {
+        Write-Host "[OK] TPM: present (Ready=$($_tpm.TpmReady), Enabled=$($_tpm.TpmEnabled), Activated=$($_tpm.TpmActivated))"
+        if (-not $_tpm.TpmReady) {
+            Write-Host "[WARN] TPM: present but not ready — check BIOS/UEFI TPM settings" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[WARN] TPM: not detected — required for Windows 11" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "[WARN] TPM: could not query status ($($_.Exception.Message))" -ForegroundColor Yellow
+}
 {% endif %}
 {% endif %}
 
@@ -101,9 +159,15 @@ if ($_easixSkip) {
 # --- Local User ---
 Write-Host "[STEP] User: configuring '{{ profile.user.name }}'..."
 if (-not (Get-LocalUser "{{ profile.user.name }}" -ErrorAction SilentlyContinue)) {
+{% if profile.user.initial_password %}
+    $pass = ConvertTo-SecureString "{{ profile.user.initial_password }}" -AsPlainText -Force
+    New-LocalUser "{{ profile.user.name }}" -Password $pass -PasswordNeverExpires
+    Write-Host "[OK] User: '{{ profile.user.name }}' created"
+{% else %}
     $pass = ConvertTo-SecureString "ChangeMe123!" -AsPlainText -Force
     New-LocalUser "{{ profile.user.name }}" -Password $pass -PasswordNeverExpires
     Write-Host "[OK] User: '{{ profile.user.name }}' created (password: ChangeMe123! — change immediately!)"
+{% endif %}
 } else {
     Write-Host "[SKIP] User: '{{ profile.user.name }}' already exists"
 }
@@ -113,20 +177,59 @@ Write-Host "[OK] User: '{{ profile.user.name }}' added to Administrators"
 {% endif %}
 {% endif %}
 
+{% if not dis_network %}
+{% if profile.network.mode == "static" and profile.network.address %}
+# --- Network (static) ---
+Write-Host "[STEP] Network: configuring static IP {{ profile.network.address }}..."
+try {
+    $_adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+    if (-not $_adapter) { throw "no active network adapter found" }
+    $_parts = "{{ profile.network.address }}" -split "/"
+    $_ip = $_parts[0]
+    $_prefix = if ($_parts.Length -gt 1) { [int]$_parts[1] } else { 24 }
+    Get-NetIPAddress -InterfaceIndex $_adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+{% if profile.network.gateway %}
+    New-NetIPAddress -InterfaceIndex $_adapter.ifIndex -IPAddress $_ip -PrefixLength $_prefix -DefaultGateway "{{ profile.network.gateway }}" -ErrorAction Stop | Out-Null
+{% else %}
+    New-NetIPAddress -InterfaceIndex $_adapter.ifIndex -IPAddress $_ip -PrefixLength $_prefix -ErrorAction Stop | Out-Null
+{% endif %}
+{% if profile.network.dns %}
+    Set-DnsClientServerAddress -InterfaceIndex $_adapter.ifIndex -ServerAddresses "{{ profile.network.dns }}"
+{% endif %}
+    Write-Host "[OK] Network: static IP $_ip/$_prefix configured on $($_adapter.Name)"
+} catch {
+    Write-Host "[WARN] Network: could not configure static IP ($($_.Exception.Message))" -ForegroundColor Yellow
+}
+{% endif %}
+{% endif %}
+
 {% if not dis_security %}
 {% if profile.security.ufw %}
 # --- Firewall ---
-Write-Host "[STEP] Firewall: enabling Windows Defender Firewall..."
-Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
-Write-Host "[OK] Firewall: all profiles enabled"
+Write-Host "[STEP] Firewall: enabling Windows Defender Firewall (deny incoming, allow SSH)..."
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True -DefaultInboundAction Block -DefaultOutboundAction Allow
+New-NetFirewallRule -DisplayName "Easix-AllowSSH" -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -ErrorAction SilentlyContinue | Out-Null
+Write-Host "[OK] Firewall: all profiles enabled (deny incoming, SSH allowed)"
 {% endif %}
 {% if profile.security.ssh_key %}
 # --- SSH key ---
 Write-Host "[STEP] SSH key: deploying for {{ profile.user.name }}..."
+{% if profile.user.sudo %}
+$_sshAdminDir = "C:\ProgramData\ssh"
+if (-not (Test-Path $_sshAdminDir)) { New-Item -ItemType Directory -Path $_sshAdminDir -Force | Out-Null }
+$_adminKeysFile = "$_sshAdminDir\administrators_authorized_keys"
+Add-Content -Path $_adminKeysFile -Value "{{ profile.security.ssh_key }}"
+icacls $_adminKeysFile /inheritance:r | Out-Null
+icacls $_adminKeysFile /grant "Administrators:F" | Out-Null
+icacls $_adminKeysFile /grant "SYSTEM:F" | Out-Null
+Write-Host "[OK] SSH key: deployed to $_adminKeysFile (administrators file, required for admin accounts)"
+{% else %}
 $_sshDir = "C:\Users\{{ profile.user.name }}\.ssh"
 if (-not (Test-Path $_sshDir)) { New-Item -ItemType Directory -Path $_sshDir -Force | Out-Null }
 Add-Content -Path "$_sshDir\authorized_keys" -Value "{{ profile.security.ssh_key }}"
 Write-Host "[OK] SSH key: deployed to $_sshDir\authorized_keys"
+{% endif %}
 {% endif %}
 {% endif %}
 

@@ -7,11 +7,25 @@ import { Select } from "../components/Select";
 const OS_LABELS: Record<string, string> = {
   ubuntu2404: "Ubuntu 24.04",
   ubuntu2204: "Ubuntu 22.04",
+  debian11: "Debian 11",
   alpine318: "Alpine 3.18",
+  windows2022: "Windows Server 2022",
+  windows2019: "Windows Server 2019",
+  windows11: "Windows 11 Pro",
+  windows10: "Windows 10 Pro",
 };
 
 function osDisplayLabel(os: string): string {
-  return OS_LABELS[os] ?? "Debian 11";
+  return OS_LABELS[os] ?? os;
+}
+
+function isWindowsOs(os: string): boolean {
+  return os.startsWith("windows");
+}
+
+function dryRunLabel(dryRunning: boolean, scriptExtension: string): string {
+  if (dryRunning) return "Running...";
+  return scriptExtension === "ps1" ? "Dry Run (PowerShell syntax check)" : "Dry Run (shellcheck)";
 }
 
 export default function Preview() {
@@ -50,9 +64,11 @@ export default function Preview() {
       .finally(() => setLoading(false));
   }, [selected]);
 
+  const scriptExtension = profile && isWindowsOs(profile.os) ? "ps1" : "sh";
+
   const handleExport = async () => {
     if (!script) return;
-    try { await api.exportScript(script, `${selected || "provision"}.sh`); }
+    try { await api.exportScript(script, `${selected || "provision"}.${scriptExtension}`); }
     catch (e) { setError(String(e)); }
   };
 
@@ -118,11 +134,11 @@ export default function Preview() {
             </button>
             <button type="button" onClick={handleExport}
               className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition-colors">
-              Save as .sh
+              Save as .{scriptExtension}
             </button>
             <button type="button" onClick={handleDryRun} disabled={dryRunning}
               className="px-3 py-1.5 text-sm bg-amber-600/80 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors">
-              {dryRunning ? "Running..." : "Dry Run (shellcheck)"}
+              {dryRunLabel(dryRunning, scriptExtension)}
             </button>
             <button type="button" onClick={() => { sessionStorage.setItem("easix_deploy_profile", selected); navigate("/deploy"); }}
               className="px-3 py-1.5 text-sm bg-green-700/80 text-white rounded-lg hover:bg-green-700 transition-colors">

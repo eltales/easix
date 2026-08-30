@@ -8,13 +8,21 @@ use crate::models::Profile;
 
 const TEMPLATE_SH:  &str = include_str!("../../templates/provision.sh.tera");
 const TEMPLATE_PS1: &str = include_str!("../../templates/provision.ps1.tera");
-
-fn is_windows_os(os: &str) -> bool {
-    os.starts_with("windows")
-}
+const DRYRUN_CHECK_PS1: &str = include_str!("../../templates/dryrun_check.ps1");
 
 fn is_no_os(os: &str) -> bool {
     os == "none"
+}
+
+/// Converts a Unix-style locale tag ("pl_PL.UTF-8") into a Windows culture
+/// name ("pl-PL"), or None for an empty/unset locale.
+fn windows_locale_tag(locale: &str) -> Option<String> {
+    let base = locale.split('.').next().unwrap_or(locale);
+    if base.is_empty() {
+        None
+    } else {
+        Some(base.replace('_', "-"))
+    }
 }
 
 fn build_tera(windows: bool) -> Result<(Tera, &'static str), String> {
@@ -35,8 +43,9 @@ pub fn generate_script(profile: Profile) -> Result<String, String> {
     if is_no_os(&profile.os) {
         return Err("No OS selected. Please choose a target operating system in the System tab.".into());
     }
-    let win = is_windows_os(&profile.os);
+    let win = profile.is_windows();
     let (tera, tpl) = build_tera(win)?;
+    let win_locale_tag = if win { windows_locale_tag(&profile.system.locale) } else { None };
     let mut ctx = Context::new();
     ctx.insert("dis_system",   &profile.disabled_sections.contains(&"system".to_string()));
     ctx.insert("dis_packages", &profile.disabled_sections.contains(&"packages".to_string()));
@@ -46,29 +55,64 @@ pub fn generate_script(profile: Profile) -> Result<String, String> {
     ctx.insert("dis_autostart",&profile.disabled_sections.contains(&"autostart".to_string()));
     ctx.insert("is_alpine",    &(profile.os == "alpine318"));
     ctx.insert("is_windows",   &win);
+    ctx.insert("win_locale_tag", &win_locale_tag);
     ctx.insert("profile",      &profile);
     tera.render(tpl, &ctx)
         .map_err(|e| format!("Render error: {e}"))
 }
 
+fn validate_unix_line(i: usize, trimmed: &str, warnings: &mut Vec<String>) {
+    if trimmed.contains("rm -rf /") && !trimmed.starts_with('#') {
+        warnings.push(format!("Line {}: dangerous 'rm -rf /' detected", i + 1));
+    }
+    if trimmed.contains("> /dev/sda") {
+        warnings.push(format!("Line {}: writing directly to block device", i + 1));
+    }
+    if trimmed.contains("mkfs.") && !trimmed.starts_with('#') {
+        warnings.push(format!("Line {}: filesystem format command detected", i + 1));
+    }
+    if trimmed.contains("dd if=") && !trimmed.starts_with('#') {
+        warnings.push(format!("Line {}: 'dd' command detected — verify target", i + 1));
+    }
+}
+
+fn validate_windows_line(i: usize, trimmed: &str, warnings: &mut Vec<String>) {
+    let targets_system_drive = trimmed.contains("C:\\") || trimmed.contains("C:/");
+    if trimmed.contains("Remove-Item")
+        && (trimmed.contains("-Recurse") || trimmed.contains("-Force"))
+        && targets_system_drive
+    {
+        warnings.push(format!(
+            "Line {}: recursive/forced deletion targeting C:\\ detected",
+            i + 1
+        ));
+    }
+    if trimmed.contains("Format-Volume") || trimmed.contains("Clear-Disk") {
+        warnings.push(format!("Line {}: disk formatting/wiping command detected", i + 1));
+    }
+    if trimmed.contains("diskpart") {
+        warnings.push(format!("Line {}: 'diskpart' command detected — verify target", i + 1));
+    }
+    if trimmed.contains("Set-ExecutionPolicy") && trimmed.contains("Unrestricted") {
+        warnings.push(format!(
+            "Line {}: sets an unrestricted PowerShell execution policy",
+            i + 1
+        ));
+    }
+}
+
 #[command]
 pub fn validate_script(profile: Profile) -> Result<Vec<String>, String> {
+    let is_windows = profile.is_windows();
     let script = generate_script(profile)?;
     let mut warnings: Vec<String> = Vec::new();
 
     for (i, line) in script.lines().enumerate() {
         let trimmed = line.trim();
-        if trimmed.contains("rm -rf /") && !trimmed.starts_with('#') {
-            warnings.push(format!("Line {}: dangerous 'rm -rf /' detected", i + 1));
-        }
-        if trimmed.contains("> /dev/sda") {
-            warnings.push(format!("Line {}: writing directly to block device", i + 1));
-        }
-        if trimmed.contains("mkfs.") && !trimmed.starts_with('#') {
-            warnings.push(format!("Line {}: filesystem format command detected", i + 1));
-        }
-        if trimmed.contains("dd if=") && !trimmed.starts_with('#') {
-            warnings.push(format!("Line {}: 'dd' command detected — verify target", i + 1));
+        if is_windows {
+            validate_windows_line(i, trimmed, &mut warnings);
+        } else {
+            validate_unix_line(i, trimmed, &mut warnings);
         }
     }
 
@@ -109,8 +153,18 @@ pub async fn export_script(
     }
 }
 
+/// Windows-generated scripts start with "#Requires"/no shebang; Unix scripts
+/// always start with a "#!" shebang line.
+fn is_windows_script(script: &str) -> bool {
+    !script.trim_start().starts_with("#!")
+}
+
 #[command]
 pub async fn dry_run_script(app: tauri::AppHandle, script: String) -> Result<String, String> {
+    if is_windows_script(&script) {
+        return dry_run_windows_script(app, &script).await;
+    }
+
     // Write script to a temp file
     let tmp_path = std::env::temp_dir().join("easix_dryrun.sh");
     {
@@ -140,6 +194,43 @@ pub async fn dry_run_script(app: tauri::AppHandle, script: String) -> Result<Str
     }
 }
 
+async fn dry_run_windows_script(app: tauri::AppHandle, script: &str) -> Result<String, String> {
+    let tmp_path = std::env::temp_dir().join("easix_dryrun.ps1");
+    std::fs::write(&tmp_path, script).map_err(|e| format!("Cannot write temp file: {e}"))?;
+
+    let checker_path = std::env::temp_dir().join("easix_dryrun_check.ps1");
+    std::fs::write(&checker_path, DRYRUN_CHECK_PS1)
+        .map_err(|e| format!("Cannot write checker file: {e}"))?;
+
+    let output = app
+        .shell()
+        .command("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            checker_path.to_str().unwrap_or_default(),
+            "-ScriptPath",
+            tmp_path.to_str().unwrap_or_default(),
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("powershell.exe not found or failed to run: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if !stdout.is_empty() {
+        Ok(stdout)
+    } else if !stderr.is_empty() {
+        Ok(stderr)
+    } else {
+        Ok("OK: no syntax errors found".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,7 +241,7 @@ mod tests {
             os: "ubuntu2204".into(),
             hostname: "testbox".into(),
             packages: vec![],
-            user: UserConfig { name: "admin".into(), sudo: true },
+            user: UserConfig { name: "admin".into(), sudo: true, initial_password: None },
             network: NetworkConfig { mode: "dhcp".into(), address: None, gateway: None, dns: None },
             security: SecurityConfig { ufw: false, ssh_key: None },
             system: SystemConfig {
@@ -377,6 +468,151 @@ mod tests {
         assert!(script.contains("winget install --id Git.Git"));
         assert!(script.contains("Get-Command"));
         assert!(script.contains("_easixSkip"));
+    }
+
+    #[test]
+    fn test_generate_windows11_default_password_when_unset() {
+        let script = generate_script(windows11_profile()).unwrap();
+        assert!(script.contains("ChangeMe123!"));
+    }
+
+    #[test]
+    fn test_generate_windows11_custom_initial_password() {
+        let mut p = windows11_profile();
+        p.user.initial_password = Some("Sup3rSecret!42".into());
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("Sup3rSecret!42"));
+        assert!(!script.contains("ChangeMe123!"));
+    }
+
+    fn windows11_profile() -> Profile {
+        let mut p = base_profile();
+        p.os = "windows11".into();
+        p
+    }
+
+    #[test]
+    fn test_generate_windows11_locale_is_mapped_and_set() {
+        let mut p = windows11_profile();
+        p.system.locale = "pl_PL.UTF-8".into();
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("Set-WinSystemLocale -SystemLocale \"pl-PL\""));
+        assert!(script.contains("Set-WinUserLanguageList -LanguageList \"pl-PL\""));
+    }
+
+    #[test]
+    fn test_generate_windows11_no_locale_skips_locale_block() {
+        let mut p = windows11_profile();
+        p.system.locale = "".into();
+        let script = generate_script(p).unwrap();
+        assert!(!script.contains("Set-WinSystemLocale"));
+    }
+
+    #[test]
+    fn test_generate_windows11_swap_configures_pagefile() {
+        let mut p = windows11_profile();
+        p.system.swap_mb = Some(4096);
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("Win32_PageFileSetting"));
+        assert!(script.contains("4096"));
+    }
+
+    #[test]
+    fn test_generate_windows11_no_swap_skips_pagefile() {
+        let script = generate_script(windows11_profile()).unwrap();
+        assert!(!script.contains("Win32_PageFileSetting"));
+    }
+
+    #[test]
+    fn test_generate_windows11_tpm_check_present() {
+        let mut p = windows11_profile();
+        p.system.enable_tpm = true;
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("Get-Tpm"));
+        assert!(script.contains("required for Windows 11"));
+    }
+
+    #[test]
+    fn test_generate_windows11_static_network() {
+        let mut p = windows11_profile();
+        p.network.mode = "static".into();
+        p.network.address = Some("192.168.1.50/24".into());
+        p.network.gateway = Some("192.168.1.1".into());
+        p.network.dns = Some("8.8.8.8".into());
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("New-NetIPAddress"));
+        assert!(script.contains("192.168.1.50/24"));
+        assert!(script.contains("-DefaultGateway \"192.168.1.1\""));
+        assert!(script.contains("Set-DnsClientServerAddress"));
+    }
+
+    #[test]
+    fn test_generate_windows11_dhcp_skips_static_network() {
+        let script = generate_script(windows11_profile()).unwrap();
+        assert!(!script.contains("New-NetIPAddress"));
+    }
+
+    #[test]
+    fn test_generate_windows11_firewall_default_deny() {
+        let mut p = windows11_profile();
+        p.security.ufw = true;
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("-DefaultInboundAction Block"));
+        assert!(script.contains("New-NetFirewallRule"));
+        assert!(script.contains("LocalPort 22"));
+    }
+
+    #[test]
+    fn test_generate_windows11_ssh_key_admin_uses_administrators_file() {
+        let mut p = windows11_profile();
+        p.user.sudo = true;
+        p.security.ssh_key = Some("ssh-ed25519 AAAA...".into());
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("administrators_authorized_keys"));
+        assert!(script.contains("icacls"));
+        assert!(!script.contains("C:\\Users\\admin\\.ssh\\authorized_keys"));
+    }
+
+    #[test]
+    fn test_generate_windows11_ssh_key_non_admin_uses_user_profile() {
+        let mut p = windows11_profile();
+        p.user.sudo = false;
+        p.security.ssh_key = Some("ssh-ed25519 AAAA...".into());
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("C:\\Users\\admin\\.ssh"));
+        assert!(!script.contains("administrators_authorized_keys"));
+    }
+
+    #[test]
+    fn test_validate_windows11_detects_recursive_delete_of_c_drive() {
+        let mut p = windows11_profile();
+        p.custom_scripts = vec![CustomScript {
+            name: "danger".into(),
+            content: "Remove-Item -Recurse -Force C:\\".into(),
+            mode: "run_once".into(),
+        }];
+        let warnings = validate_script(p).unwrap();
+        assert!(warnings.iter().any(|w| w.contains("C:\\")));
+    }
+
+    #[test]
+    fn test_validate_windows11_safe_profile_no_warnings() {
+        let warnings = validate_script(windows11_profile()).unwrap();
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    }
+
+    #[test]
+    fn test_validate_windows11_unix_patterns_are_not_checked() {
+        // A Windows script never contains "rm -rf /", so the Unix-only checks
+        // must not spuriously fire on Windows scripts (and vice versa).
+        let mut p = windows11_profile();
+        p.custom_scripts = vec![CustomScript {
+            name: "note".into(),
+            content: "Write-Host 'rm -rf / is just a string here'".into(),
+            mode: "run_once".into(),
+        }];
+        let warnings = validate_script(p).unwrap();
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
     }
 
     #[test]

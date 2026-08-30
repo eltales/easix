@@ -9,6 +9,8 @@ export interface ImportResult {
 export interface UserConfig {
   name: string;
   sudo: boolean;
+  /** Windows only: initial password for the new local user. Falls back to a generic placeholder when unset. */
+  initial_password?: string;
 }
 
 export interface NetworkConfig {

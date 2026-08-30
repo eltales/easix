@@ -56,6 +56,7 @@ export const api = {
     invoke<string>("dry_run_script", { script }),
 
   deploySsh: (data: {
+    targetId: string;
     profile: Profile;
     host: string;
     port?: number;
@@ -64,6 +65,7 @@ export const api = {
     keyPath?: string;
   }) =>
     invoke<string>("deploy_ssh", {
+      targetId: data.targetId,
       profile: data.profile,
       host: data.host,
       port: data.port ?? 22,
@@ -71,4 +73,15 @@ export const api = {
       password: data.password,
       keyPath: data.keyPath,
     }),
+
+  cancelDeploy: (targetId: string) => invoke<boolean>("cancel_deploy", { targetId }),
+
+  saveDeviceSecret: (deviceId: string, password: string) =>
+    invoke<void>("save_device_secret", { deviceId, password }),
+
+  getDeviceSecret: (deviceId: string) =>
+    invoke<string | null>("get_device_secret", { deviceId }),
+
+  deleteDeviceSecret: (deviceId: string) =>
+    invoke<void>("delete_device_secret", { deviceId }),
 };
