@@ -1,12 +1,12 @@
 # planning.md — Easix
 
-*Ostatnia aktualizacja: 2026-03-21*
+*Ostatnia aktualizacja: 2026-08-30*
 
 ---
 
 ## Stan projektu
 
-**Aktualny etap:** Feature-complete + UI redesign — gotowy do buildu i testów
+**Aktualny etap:** Feature-complete + UI redesign + prawdziwe Settings + auto-update — gotowy do buildu i testów. Code-signing (Authenticode) świadomie odłożony do momentu wypuszczenia narzędzia poza jednego użytkownika.
 
 ---
 
@@ -60,6 +60,37 @@ Backend, frontend, deploy SSH, devices CRUD, batch deploy, import/export .esx, d
 
 ## Następne zadania
 
+### TASK-031: Prawdziwe Settings (poza kolorami) — done
+- Cel: rozszerzyć drawer "Appearance" o zakładki: Deploy / Appearance / Updates
+- Backend: src-tauri/src/commands/settings.rs — AppSettings (port, username,
+  connect timeout, default OS, history limit), JSON w config dir, get/save_settings
+- Frontend: Layout.tsx (zakładki w drawerze), types.ts (AppSettings, OS_OPTIONS),
+  api.ts (getSettings/saveSettings)
+- Wpięte do: Deploy.tsx (domyślny port/username/timeout/history limit),
+  Editor.tsx (domyślny OS dla nowych profili), deploy.rs (connect_timeout_secs
+  jako override zamiast stałej)
+- Weryfikacja: tsc --noEmit OK, npm run build OK, cargo check/test w Dockerze OK (54/54)
+
+### TASK-032: Auto-update (tauri-plugin-updater) — done (czeka na sekrety GitHub)
+- Dodano tauri-plugin-updater + tauri-plugin-process (Cargo.toml, package.json)
+- capabilities/default.json: updater:default, process:default
+- tauri.conf.json: plugins.updater.pubkey (wygenerowany lokalnie przez
+  `npx tauri signer generate --ci`, klucz BEZ hasła) + endpoints wskazujące na
+  GitHub Releases latest.json
+- Prywatny klucz podpisujący NIE jest w repo — użytkownik musi dodać go sam
+  jako sekrety GitHub Actions (TAURI_SIGNING_PRIVATE_KEY, puste
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+- .github/workflows/release.yml (nowy) — tag v*.*.* buduje, podpisuje i publikuje
+  draft release z tauri-apps/tauri-action
+- UI: zakładka "Updates" w Settings drawer — Check for Updates / Install & Restart
+- To NIE jest podpis Authenticode (SmartScreen) — ten pozostaje odłożony do
+  momentu wypuszczenia narzędzia poza jednego użytkownika, zgodnie z decyzją
+
+### TASK-033: Version bump script — done
+- scripts/bump-version.mjs (+ npm run bump) synchronizuje wersję w
+  package.json / src-tauri/Cargo.toml / src-tauri/tauri.conf.json
+- Przetestowane na kopiach plików (patch 0.1.0 -> 0.1.1), oryginały nietknięte
+
 ### TASK-028: Ikony OS w Devices
 - Status: pending
 - Cel: inline SVG per OS zamiast kropki (ubuntu, debian, alpine, windows, unknown)
@@ -88,4 +119,4 @@ src/pages/: Dashboard, Editor, Preview, Deploy, Devices
 src-tauri/commands/: profiles, generator, deploy, devices
 src-tauri/templates/: provision.sh.tera, provision.ps1.tera
 
-Testy Rust: 33/33 OK | npm run build: OK
+Testy Rust: 54/54 OK | npm run build: OK | tsc --noEmit: OK

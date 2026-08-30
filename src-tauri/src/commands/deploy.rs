@@ -104,7 +104,11 @@ fn detect_remote_is_windows(sess: &ssh2::Session) -> Result<bool, String> {
 }
 
 #[cfg(feature = "ssh")]
-fn establish_connection(host: &str, port: Option<u16>) -> Result<std::net::TcpStream, String> {
+fn establish_connection(
+    host: &str,
+    port: Option<u16>,
+    connect_timeout_secs: Option<u64>,
+) -> Result<std::net::TcpStream, String> {
     use std::net::{TcpStream, ToSocketAddrs};
     use std::time::Duration;
 
@@ -114,7 +118,8 @@ fn establish_connection(host: &str, port: Option<u16>) -> Result<std::net::TcpSt
         .map_err(|e| format!("Invalid address '{addr}': {e}"))?
         .next()
         .ok_or_else(|| format!("Could not resolve address '{addr}'"))?;
-    TcpStream::connect_timeout(&socket_addr, Duration::from_secs(CONNECT_TIMEOUT_SECS))
+    let timeout = connect_timeout_secs.unwrap_or(CONNECT_TIMEOUT_SECS);
+    TcpStream::connect_timeout(&socket_addr, Duration::from_secs(timeout))
         .map_err(|e| format!("Connection failed: {e}"))
 }
 
@@ -231,6 +236,7 @@ pub fn deploy_ssh(
     username: Option<String>,
     password: Option<String>,
     key_path: Option<String>,
+    connect_timeout_secs: Option<u64>,
 ) -> Result<String, String> {
     #[cfg(feature = "ssh")]
     {
@@ -243,7 +249,7 @@ pub fn deploy_ssh(
             .filter(|l| l.trim_start().contains("[STEP]"))
             .count();
 
-        let tcp = establish_connection(&host, port)?;
+        let tcp = establish_connection(&host, port, connect_timeout_secs)?;
 
         let cancel_handle = tcp.try_clone().map_err(|e| e.to_string())?;
         active_connections()

@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { getVersion } from "@tauri-apps/api/app";
+import { check as checkForUpdate, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   ACCENT_THEMES, BG_THEMES, FONT_THEMES,
   applyAccent, applyBg, applyFont,
 } from "../theme";
+import { api } from "../api";
+import { AppSettings, DEFAULT_SETTINGS, OS_OPTIONS } from "../types";
+import { Select } from "./Select";
 
 const links = [
   { to: "/",        label: "Dashboard" },
@@ -25,8 +31,20 @@ const IconClose = () => (
   </svg>
 );
 
+const SETTINGS_TABS = ["Deploy", "Appearance", "Updates"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+type UpdateState =
+  | { phase: "idle" }
+  | { phase: "checking" }
+  | { phase: "up-to-date" }
+  | { phase: "available"; update: Update }
+  | { phase: "installing" }
+  | { phase: "error"; message: string };
+
 export default function Layout() {
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("Deploy");
   const [accent, setAccent] = useState(
     () => localStorage.getItem("easix-accent") ?? "blue"
   );
@@ -36,10 +54,44 @@ export default function Layout() {
   const [font, setFont] = useState(
     () => localStorage.getItem("easix-font") ?? "neutral"
   );
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [appVersion, setAppVersion] = useState("");
+  const [updateState, setUpdateState] = useState<UpdateState>({ phase: "idle" });
 
   const handleAccent = (id: string) => { applyAccent(id); setAccent(id); };
   const handleBg     = (id: string) => { applyBg(id);     setBg(id);     };
   const handleFont   = (id: string) => { applyFont(id);   setFont(id);   };
+
+  useEffect(() => {
+    api.getSettings().then(setSettings);
+    getVersion().then(setAppVersion);
+  }, []);
+
+  const saveSettings = (patch: Partial<AppSettings>) => {
+    const updated = { ...settings, ...patch };
+    setSettings(updated);
+    api.saveSettings(updated);
+  };
+
+  const handleCheckForUpdates = async () => {
+    setUpdateState({ phase: "checking" });
+    try {
+      const update = await checkForUpdate();
+      setUpdateState(update ? { phase: "available", update } : { phase: "up-to-date" });
+    } catch (e) {
+      setUpdateState({ phase: "error", message: String(e) });
+    }
+  };
+
+  const handleInstallUpdate = async (update: Update) => {
+    setUpdateState({ phase: "installing" });
+    try {
+      await update.downloadAndInstall();
+      await relaunch();
+    } catch (e) {
+      setUpdateState({ phase: "error", message: String(e) });
+    }
+  };
 
   return (
     <div className="flex h-screen bg-surface-900">
@@ -80,9 +132,9 @@ export default function Layout() {
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-surface-200 hover:bg-surface-700 hover:text-white transition-colors"
           >
             <IconGear />
-            <span>Appearance</span>
+            <span>Settings</span>
           </button>
-          <div className="px-3 py-1 text-xs text-surface-400">v0.1.0</div>
+          <div className="px-3 py-1 text-xs text-surface-400">v{appVersion || "…"}</div>
         </div>
       </nav>
 
@@ -103,13 +155,13 @@ export default function Layout() {
 
       {/* ── Settings drawer ───────────────────────────────────────── */}
       <aside
-        className={`fixed inset-y-0 right-0 w-72 bg-surface-800 border-l border-surface-500 shadow-2xl z-50
+        className={`fixed inset-y-0 right-0 w-80 bg-surface-800 border-l border-surface-500 shadow-2xl z-50
           flex flex-col transform transition-transform duration-300 ease-in-out
           ${showSettings ? "translate-x-0" : "translate-x-full"}`}
       >
         {/* Drawer header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-500">
-          <h2 className="text-sm font-semibold text-white">Appearance</h2>
+          <h2 className="text-sm font-semibold text-white">Settings</h2>
           <button
             type="button"
             onClick={() => setShowSettings(false)}
@@ -119,9 +171,120 @@ export default function Layout() {
           </button>
         </div>
 
+        {/* Tab bar */}
+        <div className="flex px-5 pt-3 gap-1 border-b border-surface-500">
+          {SETTINGS_TABS.map((t) => (
+            <button
+              type="button"
+              key={t}
+              onClick={() => setSettingsTab(t)}
+              className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
+                settingsTab === t
+                  ? "border-primary-500 text-primary-400"
+                  : "border-transparent text-surface-300 hover:text-surface-100"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
         {/* Drawer body */}
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-7">
 
+        {settingsTab === "Deploy" && (
+          <>
+            {/* ── Default SSH port ──────────────────────────────────── */}
+            <section>
+              <label htmlFor="settings-port" className="text-xs font-semibold text-surface-200 uppercase tracking-wider mb-3 block">
+                Default SSH Port
+              </label>
+              <input
+                id="settings-port"
+                type="text"
+                inputMode="numeric"
+                defaultValue={settings.default_ssh_port}
+                key={`port-${settings.default_ssh_port}`}
+                onBlur={(e) => {
+                  const port = Number.parseInt(e.target.value, 10);
+                  if (port > 0 && port <= 65535) saveSettings({ default_ssh_port: port });
+                }}
+                className="input w-full"
+              />
+            </section>
+
+            {/* ── Default username ──────────────────────────────────── */}
+            <section>
+              <label htmlFor="settings-username" className="text-xs font-semibold text-surface-200 uppercase tracking-wider mb-3 block">
+                Default Username
+              </label>
+              <input
+                id="settings-username"
+                type="text"
+                defaultValue={settings.default_username}
+                key={`user-${settings.default_username}`}
+                onBlur={(e) => {
+                  const username = e.target.value.trim();
+                  if (username) saveSettings({ default_username: username });
+                }}
+                className="input w-full"
+              />
+            </section>
+
+            {/* ── Connect timeout ───────────────────────────────────── */}
+            <section>
+              <label htmlFor="settings-timeout" className="text-xs font-semibold text-surface-200 uppercase tracking-wider mb-3 block">
+                Connect Timeout (seconds)
+              </label>
+              <input
+                id="settings-timeout"
+                type="text"
+                inputMode="numeric"
+                defaultValue={settings.connect_timeout_secs}
+                key={`timeout-${settings.connect_timeout_secs}`}
+                onBlur={(e) => {
+                  const secs = Number.parseInt(e.target.value, 10);
+                  if (secs > 0 && secs <= 300) saveSettings({ connect_timeout_secs: secs });
+                }}
+                className="input w-full"
+              />
+            </section>
+
+            {/* ── Default OS for new profiles ───────────────────────── */}
+            <section>
+              <p className="text-xs font-semibold text-surface-200 uppercase tracking-wider mb-3">
+                Default OS for New Profiles
+              </p>
+              <Select
+                value={settings.default_os}
+                onChange={(v) => saveSettings({ default_os: v as AppSettings["default_os"] })}
+                options={OS_OPTIONS}
+              />
+            </section>
+
+            {/* ── Deploy history limit ──────────────────────────────── */}
+            <section>
+              <label htmlFor="settings-history" className="text-xs font-semibold text-surface-200 uppercase tracking-wider mb-3 block">
+                Deploy History Limit
+              </label>
+              <input
+                id="settings-history"
+                type="text"
+                inputMode="numeric"
+                defaultValue={settings.history_limit}
+                key={`history-${settings.history_limit}`}
+                onBlur={(e) => {
+                  const limit = Number.parseInt(e.target.value, 10);
+                  if (limit > 0 && limit <= 500) saveSettings({ history_limit: limit });
+                }}
+                className="input w-full"
+              />
+            </section>
+          </>
+        )}
+
+        {settingsTab === "Appearance" && (
+        <>
           {/* ── Accent Color ──────────────────────────────────────── */}
           <section>
             <p className="text-xs font-semibold text-surface-200 uppercase tracking-wider mb-3">
@@ -208,6 +371,57 @@ export default function Layout() {
               ))}
             </div>
           </section>
+        </>
+        )}
+
+        {settingsTab === "Updates" && (
+          <>
+            <section>
+              <p className="text-xs font-semibold text-surface-200 uppercase tracking-wider mb-3">
+                Current Version
+              </p>
+              <p className="text-sm text-surface-100 font-mono">v{appVersion || "…"}</p>
+            </section>
+
+            <section>
+              <button
+                type="button"
+                onClick={handleCheckForUpdates}
+                disabled={updateState.phase === "checking" || updateState.phase === "installing"}
+                className="w-full px-3 py-2.5 text-sm font-medium rounded-lg bg-primary-600 hover:bg-primary-500 text-white disabled:opacity-50 transition-colors"
+              >
+                {updateState.phase === "checking" ? "Checking…" : "Check for Updates"}
+              </button>
+
+              {updateState.phase === "up-to-date" && (
+                <p className="text-xs text-green-400 mt-3">You're on the latest version.</p>
+              )}
+
+              {updateState.phase === "available" && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-surface-100">
+                    Version <span className="font-mono">{updateState.update.version}</span> is available.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleInstallUpdate(updateState.update)}
+                    className="w-full px-3 py-2 text-xs font-medium rounded-lg bg-green-700 hover:bg-green-600 text-white transition-colors"
+                  >
+                    Install &amp; Restart
+                  </button>
+                </div>
+              )}
+
+              {updateState.phase === "installing" && (
+                <p className="text-xs text-surface-300 mt-3">Downloading and installing…</p>
+              )}
+
+              {updateState.phase === "error" && (
+                <p className="text-xs text-red-400 mt-3">{updateState.message}</p>
+              )}
+            </section>
+          </>
+        )}
         </div>
       </aside>
     </div>

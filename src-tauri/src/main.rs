@@ -4,13 +4,15 @@
 mod commands;
 mod models;
 
-use commands::{config, deploy, devices, generator, profiles, secrets};
+use commands::{config, deploy, devices, generator, profiles, secrets, settings};
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             profiles::list_profiles,
             profiles::get_profile,
@@ -39,6 +41,8 @@ fn main() {
             secrets::save_device_secret,
             secrets::get_device_secret,
             secrets::delete_device_secret,
+            settings::get_settings,
+            settings::save_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

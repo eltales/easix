@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { api } from "../api";
-import { Device } from "../types";
+import { AppSettings, DEFAULT_SETTINGS, Device } from "../types";
 import { useDevices } from "../context/DevicesContext";
 import { Select } from "../components/Select";
 
@@ -54,14 +54,14 @@ interface DeployOutcome {
   output: string;
 }
 
-function makeTarget(): DeployTarget {
+function makeTarget(settings: AppSettings = DEFAULT_SETTINGS): DeployTarget {
   return {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2),
     profile: "",
     device_id: "",
     host: "",
-    port: "22",
-    username: "root",
+    port: String(settings.default_ssh_port),
+    username: settings.default_username,
     password: "",
     key_path: "",
     status: "idle",
@@ -75,8 +75,8 @@ function loadHistory(): HistoryEntry[] {
   catch { return []; }
 }
 
-function saveHistory(entries: HistoryEntry[]) {
-  localStorage.setItem("easix_deploy_history", JSON.stringify(entries.slice(0, 50)));
+function saveHistory(entries: HistoryEntry[], limit: number) {
+  localStorage.setItem("easix_deploy_history", JSON.stringify(entries.slice(0, limit)));
 }
 
 function targetLabel(target: DeployTarget, devices: Device[], index: number): string {
@@ -135,6 +135,7 @@ export default function Deploy() {
   const { devices, setDeviceConnected } = useDevices();
   const location = useLocation();
   const [profiles, setProfiles] = useState<string[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [targets, setTargets] = useState<DeployTarget[]>([makeTarget()]);
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState("");
@@ -146,6 +147,18 @@ export default function Deploy() {
 
   useEffect(() => {
     api.listProfiles().then(setProfiles);
+  }, []);
+
+  // Apply saved deploy defaults once loaded, but only to rows still untouched.
+  useEffect(() => {
+    api.getSettings().then((s) => {
+      setSettings(s);
+      setTargets((prev) => prev.map((t) =>
+        !t.device_id && t.port === String(DEFAULT_SETTINGS.default_ssh_port) && t.username === DEFAULT_SETTINGS.default_username
+          ? { ...t, port: String(s.default_ssh_port), username: s.default_username }
+          : t
+      ));
+    });
   }, []);
 
   // Pre-select device when coming from Quick Deploy
@@ -209,7 +222,7 @@ export default function Deploy() {
   const addTarget = () => {
     if (targets.length >= 10) return;
     const last = targets[targets.length - 1];
-    const next = makeTarget();
+    const next = makeTarget(settings);
     // Pre-fill profile from previous row
     next.profile = last.profile;
     setTargets((prev) => [...prev, next]);
@@ -243,6 +256,7 @@ export default function Deploy() {
         username: target.username || "root",
         password: target.password || undefined,
         keyPath: target.key_path || undefined,
+        connectTimeoutSecs: settings.connect_timeout_secs,
       });
       updateTarget(target.id, { status: "ok" });
       const d = deviceById(target.device_id);
@@ -269,7 +283,7 @@ export default function Deploy() {
     }));
     const updated = [...newEntries, ...history];
     setHistory(updated);
-    saveHistory(updated);
+    saveHistory(updated, settings.history_limit);
   };
 
   const handleDeploy = async () => {

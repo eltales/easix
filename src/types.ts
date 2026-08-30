@@ -78,6 +78,33 @@ export interface Profile {
   disabled_sections: string[];
 }
 
+export interface AppSettings {
+  default_ssh_port: number;
+  default_username: string;
+  connect_timeout_secs: number;
+  default_os: Profile["os"];
+  history_limit: number;
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  default_ssh_port: 22,
+  default_username: "root",
+  connect_timeout_secs: 10,
+  default_os: "ubuntu2404",
+  history_limit: 50,
+};
+
+export const OS_OPTIONS: { value: Profile["os"]; label: string }[] = [
+  { value: "ubuntu2404", label: "Ubuntu 24.04" },
+  { value: "ubuntu2204", label: "Ubuntu 22.04" },
+  { value: "debian11", label: "Debian 11" },
+  { value: "alpine318", label: "Alpine 3.18" },
+  { value: "windows2022", label: "Windows Server 2022" },
+  { value: "windows2019", label: "Windows Server 2019" },
+  { value: "windows11", label: "Windows 11 Pro" },
+  { value: "windows10", label: "Windows 10 Pro" },
+];
+
 export const DEFAULT_PROFILE: Profile = {
   os: "ubuntu2404",
   hostname: "",

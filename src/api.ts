@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Device, ImportResult, Profile } from "./types";
+import { AppSettings, Device, ImportResult, Profile } from "./types";
 
 export const api = {
   listProfiles: () => invoke<string[]>("list_profiles"),
@@ -63,6 +63,7 @@ export const api = {
     username?: string;
     password?: string;
     keyPath?: string;
+    connectTimeoutSecs?: number;
   }) =>
     invoke<string>("deploy_ssh", {
       targetId: data.targetId,
@@ -72,6 +73,7 @@ export const api = {
       username: data.username ?? "root",
       password: data.password,
       keyPath: data.keyPath,
+      connectTimeoutSecs: data.connectTimeoutSecs,
     }),
 
   cancelDeploy: (targetId: string) => invoke<boolean>("cancel_deploy", { targetId }),
@@ -84,4 +86,9 @@ export const api = {
 
   deleteDeviceSecret: (deviceId: string) =>
     invoke<void>("delete_device_secret", { deviceId }),
+
+  getSettings: () => invoke<AppSettings>("get_settings"),
+
+  saveSettings: (settings: AppSettings) =>
+    invoke<void>("save_settings", { settings }),
 };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { Profile, CustomScript, DEFAULT_PROFILE, SoftwareItem, TaskType } from "../types";
+import { Profile, CustomScript, DEFAULT_PROFILE, SoftwareItem, TaskType, OS_OPTIONS } from "../types";
 import { Select } from "../components/Select";
 
 const TABS = ["System", "Software", "User", "Network", "Security", "Scripts"] as const;
@@ -142,7 +142,10 @@ export default function Editor() {
         setGrubRaw(sys.grub_timeout !== undefined ? String(sys.grub_timeout) : "");
         if (!isDuplicate) setProfileName(routeName);
       });
+    } else {
+      api.getSettings().then((s) => update("os", s.default_os));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeName, isDuplicate]);
 
   const update = <K extends keyof Profile>(key: K, value: Profile[K]) =>
@@ -297,16 +300,7 @@ export default function Editor() {
                 id="profile-os"
                 value={profile.os}
                 onChange={(v) => update("os", v as Profile["os"])}
-                options={[
-                  { value: "ubuntu2404",  label: "Ubuntu 24.04" },
-                  { value: "ubuntu2204",  label: "Ubuntu 22.04" },
-                  { value: "debian11",    label: "Debian 11" },
-                  { value: "alpine318",   label: "Alpine 3.18" },
-                  { value: "windows2022", label: "Windows Server 2022" },
-                  { value: "windows2019", label: "Windows Server 2019" },
-                  { value: "windows11",   label: "Windows 11 Pro" },
-                  { value: "windows10",   label: "Windows 10 Pro" },
-                ]}
+                options={OS_OPTIONS}
               />
             </div>
 
