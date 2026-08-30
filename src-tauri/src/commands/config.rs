@@ -180,36 +180,47 @@ fn import_profiles(
     result: &mut ImportResult,
 ) -> Result<(), String> {
     for (name, profile) in profiles {
-        let target_path = pdir.join(format!("{name}.json"));
+        import_one_profile(app, pdir, name, profile, result)?;
+    }
+    Ok(())
+}
 
-        if target_path.exists() {
-            let overwrite = app
-                .dialog()
-                .message(format!(
-                    "Profile \"{name}\" already exists.\n\nClick OK to overwrite, or Cancel to save as a new copy."
-                ))
-                .title("Import — Profile Conflict")
-                .buttons(MessageDialogButtons::OkCancel)
-                .blocking_show();
+fn import_one_profile(
+    app: &tauri::AppHandle,
+    pdir: &PathBuf,
+    name: String,
+    profile: Profile,
+    result: &mut ImportResult,
+) -> Result<(), String> {
+    let target_path = pdir.join(format!("{name}.json"));
 
-            if overwrite {
-                let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
-                fs::write(&target_path, json)
-                    .map_err(|e| format!("Cannot overwrite '{name}': {e}"))?;
-                result.profiles_overwritten.push(name);
-            } else {
-                let new_name = unique_profile_name(pdir, &name);
-                let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
-                fs::write(pdir.join(format!("{new_name}.json")), json)
-                    .map_err(|e| format!("Cannot save '{new_name}': {e}"))?;
-                result.profiles_renamed.push(format!("{name} → {new_name}"));
-            }
-        } else {
-            let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
-            fs::write(&target_path, json)
-                .map_err(|e| format!("Cannot save '{name}': {e}"))?;
-            result.profiles_added.push(name);
-        }
+    if !target_path.exists() {
+        let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+        fs::write(&target_path, json).map_err(|e| format!("Cannot save '{name}': {e}"))?;
+        result.profiles_added.push(name);
+        return Ok(());
+    }
+
+    let overwrite = app
+        .dialog()
+        .message(format!(
+            "Profile \"{name}\" already exists.\n\nClick OK to overwrite, or Cancel to save as a new copy."
+        ))
+        .title("Import — Profile Conflict")
+        .buttons(MessageDialogButtons::OkCancel)
+        .blocking_show();
+
+    if overwrite {
+        let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+        fs::write(&target_path, json)
+            .map_err(|e| format!("Cannot overwrite '{name}': {e}"))?;
+        result.profiles_overwritten.push(name);
+    } else {
+        let new_name = unique_profile_name(pdir, &name);
+        let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+        fs::write(pdir.join(format!("{new_name}.json")), json)
+            .map_err(|e| format!("Cannot save '{new_name}': {e}"))?;
+        result.profiles_renamed.push(format!("{name} → {new_name}"));
     }
     Ok(())
 }

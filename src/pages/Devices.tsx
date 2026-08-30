@@ -28,7 +28,7 @@ const OS_OPTIONS = [
   { value: "other",   label: "Other Linux" },
 ];
 
-function OsSvg({ os }: { os?: string }) {
+function OsSvg({ os }: Readonly<{ os?: string }>) {
   switch (os) {
     case "ubuntu":
       return (
@@ -90,20 +90,29 @@ function OsSvg({ os }: { os?: string }) {
   }
 }
 
-function OsIcon({ os, status }: { os?: string; status: PingStatus }) {
-  const borderCls =
-    status === null      ? "border-red-500"    :
-    status !== undefined ? "border-green-500"  :
-                           "border-surface-500";
-  const glowStyle =
-    status === null      ? { boxShadow: "0 0 6px 2px rgba(239,68,68,0.45)" }  :
-    status !== undefined ? { boxShadow: "0 0 6px 2px rgba(34,197,94,0.45)" }  :
-                           {};
+function pingBorderClass(status: PingStatus): string {
+  if (status === null) return "border-red-500";
+  if (status !== undefined) return "border-green-500";
+  return "border-surface-500";
+}
+
+function pingGlowStyle(status: PingStatus): { boxShadow?: string } {
+  if (status === null) return { boxShadow: "0 0 6px 2px rgba(239,68,68,0.45)" };
+  if (status !== undefined) return { boxShadow: "0 0 6px 2px rgba(34,197,94,0.45)" };
+  return {};
+}
+
+function pingLabelFor(status: PingStatus): string {
+  if (status === null) return "Offline";
+  if (status !== undefined) return `Online · ${status}ms`;
+  return "Not pinged";
+}
+
+function OsIcon({ os, status }: Readonly<{ os?: string; status: PingStatus }>) {
+  const borderCls = pingBorderClass(status);
+  const glowStyle = pingGlowStyle(status);
   const label = OS_OPTIONS.find((o) => o.value === os)?.label ?? "Unknown";
-  const pingLabel =
-    status === null      ? "Offline"       :
-    status !== undefined ? `Online · ${status}ms` :
-                           "Not pinged";
+  const pingLabel = pingLabelFor(status);
 
   return (
     <div
@@ -155,7 +164,7 @@ interface CardProps {
   connecting: boolean;
 }
 
-function DeviceCard({ device: d, status, onEdit, onDelete, onDuplicate, onConnect, onQuickDeploy, connecting }: CardProps) {
+function DeviceCard({ device: d, status, onEdit, onDelete, onDuplicate, onConnect, onQuickDeploy, connecting }: Readonly<CardProps>) {
   const accentColor = d.color ?? (d.last_connected ? "#3b82f6" : "#262626");
   const connected = relativeTime(d.last_connected);
 
@@ -210,23 +219,23 @@ function DeviceCard({ device: d, status, onEdit, onDelete, onDuplicate, onConnec
 
       {/* Actions */}
       <div className="mt-4 flex flex-wrap gap-1.5">
-        <button onClick={onEdit}
+        <button type="button" onClick={onEdit}
           className="px-2.5 py-1 text-xs font-medium bg-surface-600 text-surface-100 rounded-lg hover:bg-surface-500 hover:text-white transition-colors">
           Edit
         </button>
-        <button onClick={onDuplicate}
+        <button type="button" onClick={onDuplicate}
           className="px-2.5 py-1 text-xs font-medium bg-surface-600 text-surface-100 rounded-lg hover:bg-surface-500 hover:text-white transition-colors">
           Duplicate
         </button>
-        <button onClick={onConnect} disabled={connecting}
+        <button type="button" onClick={onConnect} disabled={connecting}
           className="px-2.5 py-1 text-xs font-medium bg-green-700/80 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
           {connecting ? "Opening…" : "Connect"}
         </button>
-        <button onClick={onQuickDeploy}
+        <button type="button" onClick={onQuickDeploy}
           className="px-2.5 py-1 text-xs font-medium bg-primary-600/80 text-white rounded-lg hover:bg-primary-600 transition-colors">
           Deploy
         </button>
-        <button onClick={onDelete}
+        <button type="button" onClick={onDelete}
           className="px-2.5 py-1 text-xs font-medium text-red-400/80 hover:bg-red-900/20 hover:text-red-400 rounded-lg transition-colors ml-auto">
           Delete
         </button>
@@ -256,9 +265,11 @@ export default function Devices() {
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(d);
   }
-  const groupNames = Object.keys(grouped).sort((a, b) =>
-    a === "__ungrouped__" ? 1 : b === "__ungrouped__" ? -1 : a.localeCompare(b)
-  );
+  const groupNames = Object.keys(grouped).sort((a, b) => {
+    if (a === "__ungrouped__") return 1;
+    if (b === "__ungrouped__") return -1;
+    return a.localeCompare(b);
+  });
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -333,6 +344,7 @@ export default function Devices() {
         </div>
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={() => pingAll()}
             disabled={devices.length === 0}
             className="w-28 py-2 text-sm font-medium border border-surface-500 text-surface-100 rounded-lg hover:bg-surface-700 hover:text-white disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
@@ -351,6 +363,7 @@ export default function Devices() {
             )}
           </button>
           <button
+            type="button"
             onClick={openNew}
             className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-500 transition-colors"
           >
@@ -401,27 +414,27 @@ export default function Devices() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-surface-800 border border-surface-500 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h3 className="text-lg font-semibold text-white">
-              {devices.find((d) => d.id === editing.id) ? "Edit Device" : "New Device"}
+              {devices.some((d) => d.id === editing.id) ? "Edit Device" : "New Device"}
             </h3>
 
             {/* Name */}
             <div>
-              <label className="block text-sm font-medium text-surface-100 mb-1.5">Name</label>
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+              <label htmlFor="device-name" className="block text-sm font-medium text-surface-100 mb-1.5">Name</label>
+              <input id="device-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="Lab PC 01" className="input w-full" />
             </div>
 
             {/* Host + Port */}
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-surface-100 mb-1.5">Host (IP)</label>
-                <input value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })}
+                <label htmlFor="device-host" className="block text-sm font-medium text-surface-100 mb-1.5">Host (IP)</label>
+                <input id="device-host" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })}
                   placeholder="192.168.1.50" className="input w-full font-mono" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-surface-100 mb-1.5">Port</label>
-                <input type="number" value={form.port}
-                  onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 22 })}
+                <label htmlFor="device-port" className="block text-sm font-medium text-surface-100 mb-1.5">Port</label>
+                <input id="device-port" type="number" value={form.port}
+                  onChange={(e) => setForm({ ...form, port: Number.parseInt(e.target.value) || 22 })}
                   className="input w-full font-mono" />
               </div>
             </div>
@@ -429,13 +442,14 @@ export default function Devices() {
             {/* Username + Auth */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-surface-100 mb-1.5">Username</label>
-                <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })}
+                <label htmlFor="device-username" className="block text-sm font-medium text-surface-100 mb-1.5">Username</label>
+                <input id="device-username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })}
                   className="input w-full" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-surface-100 mb-1.5">Auth type</label>
+                <label htmlFor="device-auth-type" className="block text-sm font-medium text-surface-100 mb-1.5">Auth type</label>
                 <Select
+                  id="device-auth-type"
                   value={form.auth_type}
                   onChange={(v) => setForm({ ...form, auth_type: v as "password" | "key" })}
                   options={[{ value: "password", label: "Password" }, { value: "key", label: "SSH Key" }]}
@@ -445,8 +459,8 @@ export default function Devices() {
 
             {form.auth_type === "key" && (
               <div>
-                <label className="block text-sm font-medium text-surface-100 mb-1.5">Key Path</label>
-                <input value={form.key_path ?? ""}
+                <label htmlFor="device-key-path" className="block text-sm font-medium text-surface-100 mb-1.5">Key Path</label>
+                <input id="device-key-path" value={form.key_path ?? ""}
                   onChange={(e) => setForm({ ...form, key_path: e.target.value || undefined })}
                   placeholder="~/.ssh/id_rsa" className="input w-full font-mono" />
               </div>
@@ -455,14 +469,15 @@ export default function Devices() {
             {/* Group + OS */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-surface-100 mb-1.5">Group</label>
-                <input value={form.group ?? ""}
+                <label htmlFor="device-group" className="block text-sm font-medium text-surface-100 mb-1.5">Group</label>
+                <input id="device-group" value={form.group ?? ""}
                   onChange={(e) => setForm({ ...form, group: e.target.value || undefined })}
                   placeholder="Production, Lab…" className="input w-full" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-surface-100 mb-1.5">OS</label>
+                <label htmlFor="device-os" className="block text-sm font-medium text-surface-100 mb-1.5">OS</label>
                 <Select
+                  id="device-os"
                   value={form.os ?? ""}
                   onChange={(v) => setForm({ ...form, os: v || undefined })}
                   options={[{ value: "", label: "— Unknown —" }, ...OS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))]}
@@ -472,8 +487,8 @@ export default function Devices() {
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-surface-100 mb-1.5">Description</label>
-              <textarea value={form.description ?? ""}
+              <label htmlFor="device-description" className="block text-sm font-medium text-surface-100 mb-1.5">Description</label>
+              <textarea id="device-description" value={form.description ?? ""}
                 onChange={(e) => setForm({ ...form, description: e.target.value || undefined })}
                 rows={2} placeholder="Notes about this device…"
                 className="input w-full resize-none" />
@@ -481,12 +496,12 @@ export default function Devices() {
 
             {/* Tags */}
             <div>
-              <label className="block text-sm font-medium text-surface-100 mb-1.5">Tags</label>
+              <label htmlFor="device-tag-input" className="block text-sm font-medium text-surface-100 mb-1.5">Tags</label>
               <div className="flex gap-2">
-                <input value={tagInput} onChange={(e) => setTagInput(e.target.value)}
+                <input id="device-tag-input" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTag())}
                   placeholder="nginx, backup… (Enter to add)" className="flex-1 input" />
-                <button onClick={addTag}
+                <button type="button" onClick={addTag}
                   className="px-3 py-2 text-sm bg-surface-600 hover:bg-surface-500 text-surface-100 rounded-lg transition-colors">
                   Add
                 </button>
@@ -496,7 +511,7 @@ export default function Devices() {
                   {form.tags.map((tag) => (
                     <span key={tag} className="flex items-center gap-1 px-2 py-0.5 bg-surface-600 text-surface-100 text-xs rounded-lg">
                       {tag}
-                      <button onClick={() => removeTag(tag)} className="text-surface-300 hover:text-red-400 ml-1">×</button>
+                      <button type="button" onClick={() => removeTag(tag)} className="text-surface-300 hover:text-red-400 ml-1">×</button>
                     </span>
                   ))}
                 </div>
@@ -504,29 +519,29 @@ export default function Devices() {
             </div>
 
             {/* Color */}
-            <div>
-              <label className="block text-sm font-medium text-surface-100 mb-2">Color</label>
+            <fieldset>
+              <legend className="block text-sm font-medium text-surface-100 mb-2">Color</legend>
               <div className="flex gap-2 flex-wrap">
-                <button onClick={() => setForm({ ...form, color: undefined })}
+                <button type="button" onClick={() => setForm({ ...form, color: undefined })}
                   className={`w-7 h-7 rounded-full border-2 bg-surface-600 ${!form.color ? "border-white" : "border-transparent"}`}
                   title="No color" />
                 {PRESET_COLORS.map((c) => (
-                  <button key={c.value} onClick={() => setForm({ ...form, color: c.value })}
+                  <button type="button" key={c.value} onClick={() => setForm({ ...form, color: c.value })}
                     style={{ backgroundColor: c.value }}
                     className={`w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 ${form.color === c.value ? "border-white scale-110" : "border-transparent"}`}
                     title={c.label} />
                 ))}
               </div>
-            </div>
+            </fieldset>
 
             {error && <div className="text-red-400 text-sm">{error}</div>}
 
             <div className="flex gap-3 pt-2">
-              <button onClick={() => setEditing(null)}
+              <button type="button" onClick={() => setEditing(null)}
                 className="flex-1 py-2 text-sm border border-surface-500 text-surface-100 rounded-lg hover:bg-surface-700 transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving}
+              <button type="button" onClick={handleSave} disabled={saving}
                 className="flex-1 py-2 text-sm font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 transition-colors">
                 {saving ? "Saving…" : "Save"}
               </button>

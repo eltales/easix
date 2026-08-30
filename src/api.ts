@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Device, Profile } from "./types";
+import { Device, ImportResult, Profile } from "./types";
 
 export const api = {
   listProfiles: () => invoke<string[]>("list_profiles"),

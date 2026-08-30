@@ -75,6 +75,7 @@ export default function Layout() {
         {/* Bottom: settings gear + version */}
         <div className="px-3 pb-4 space-y-1">
           <button
+            type="button"
             onClick={() => setShowSettings(true)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-surface-200 hover:bg-surface-700 hover:text-white transition-colors"
           >
@@ -92,8 +93,10 @@ export default function Layout() {
 
       {/* ── Settings drawer backdrop (invisible, closes on click) ─── */}
       {showSettings && (
-        <div
-          className="fixed inset-0 z-40"
+        <button
+          type="button"
+          aria-label="Close settings"
+          className="fixed inset-0 z-40 cursor-default"
           onClick={() => setShowSettings(false)}
         />
       )}
@@ -108,6 +111,7 @@ export default function Layout() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-500">
           <h2 className="text-sm font-semibold text-white">Appearance</h2>
           <button
+            type="button"
             onClick={() => setShowSettings(false)}
             className="text-surface-300 hover:text-white transition-colors"
           >
@@ -126,6 +130,7 @@ export default function Layout() {
             <div className="flex flex-wrap gap-2.5">
               {ACCENT_THEMES.map((t) => (
                 <button
+                  type="button"
                   key={t.id}
                   onClick={() => handleAccent(t.id)}
                   title={t.label}
@@ -149,6 +154,7 @@ export default function Layout() {
             <div className="grid grid-cols-2 gap-2">
               {BG_THEMES.map((t) => (
                 <button
+                  type="button"
                   key={t.id}
                   onClick={() => handleBg(t.id)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-colors text-left ${
@@ -177,6 +183,7 @@ export default function Layout() {
             <div className="space-y-1.5">
               {FONT_THEMES.map((t) => (
                 <button
+                  type="button"
                   key={t.id}
                   onClick={() => handleFont(t.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors text-left ${

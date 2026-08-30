@@ -4,6 +4,16 @@ import { api } from "../api";
 import { Profile } from "../types";
 import { Select } from "../components/Select";
 
+const OS_LABELS: Record<string, string> = {
+  ubuntu2404: "Ubuntu 24.04",
+  ubuntu2204: "Ubuntu 22.04",
+  alpine318: "Alpine 3.18",
+};
+
+function osDisplayLabel(os: string): string {
+  return OS_LABELS[os] ?? "Debian 11";
+}
+
 export default function Preview() {
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -66,8 +76,9 @@ export default function Preview() {
       </div>
 
       <div className="mb-6">
-        <label className="block text-sm font-medium text-surface-100 mb-1.5">Select profile</label>
+        <label htmlFor="preview-profile" className="block text-sm font-medium text-surface-100 mb-1.5">Select profile</label>
         <Select
+          id="preview-profile"
           value={selected}
           onChange={setSelected}
           options={[{ value: "", label: "-- Choose --" }, ...profiles.map((n) => ({ value: n, label: n }))]}
@@ -84,7 +95,7 @@ export default function Preview() {
         <>
           {profile && (
             <div className="bg-surface-700 border border-surface-500 rounded-xl p-4 mb-4 text-sm grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div><span className="text-surface-200">OS: </span><span className="text-surface-50">{profile.os === "ubuntu2404" ? "Ubuntu 24.04" : profile.os === "ubuntu2204" ? "Ubuntu 22.04" : profile.os === "alpine318" ? "Alpine 3.18" : "Debian 11"}</span></div>
+              <div><span className="text-surface-200">OS: </span><span className="text-surface-50">{osDisplayLabel(profile.os)}</span></div>
               <div><span className="text-surface-200">Host: </span><span className="text-surface-50">{profile.hostname}</span></div>
               <div><span className="text-surface-200">User: </span><span className="text-surface-50">{profile.user.name}{profile.user.sudo && " (sudo)"}</span></div>
               <div><span className="text-surface-200">Packages: </span><span className="text-surface-50">{profile.packages.length}</span></div>
@@ -101,19 +112,19 @@ export default function Preview() {
           )}
 
           <div className="flex gap-2 mb-3 flex-wrap">
-            <button onClick={handleCopy}
+            <button type="button" onClick={handleCopy}
               className="px-3 py-1.5 text-sm bg-surface-600 text-surface-100 rounded-lg hover:bg-surface-500 transition-colors border border-surface-500">
               Copy to clipboard
             </button>
-            <button onClick={handleExport}
+            <button type="button" onClick={handleExport}
               className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition-colors">
               Save as .sh
             </button>
-            <button onClick={handleDryRun} disabled={dryRunning}
+            <button type="button" onClick={handleDryRun} disabled={dryRunning}
               className="px-3 py-1.5 text-sm bg-amber-600/80 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors">
               {dryRunning ? "Running..." : "Dry Run (shellcheck)"}
             </button>
-            <button onClick={() => { sessionStorage.setItem("easix_deploy_profile", selected); navigate("/deploy"); }}
+            <button type="button" onClick={() => { sessionStorage.setItem("easix_deploy_profile", selected); navigate("/deploy"); }}
               className="px-3 py-1.5 text-sm bg-green-700/80 text-white rounded-lg hover:bg-green-700 transition-colors">
               Deploy via SSH
             </button>
@@ -127,7 +138,7 @@ export default function Preview() {
                 <h4 className={`text-sm font-medium ${dryRunResult === "shellcheck: no issues found" ? "text-green-400" : "text-amber-400"}`}>
                   Dry Run Result
                 </h4>
-                <button onClick={() => setDryRunResult(null)} className="text-surface-300 hover:text-surface-100 text-sm">✕</button>
+                <button type="button" onClick={() => setDryRunResult(null)} className="text-surface-300 hover:text-surface-100 text-sm">✕</button>
               </div>
               <pre className="text-xs font-mono whitespace-pre-wrap text-surface-100">{dryRunResult}</pre>
             </div>

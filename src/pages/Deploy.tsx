@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { api } from "../api";
-import { Device } from "../types";
 import { useDevices } from "../context/DevicesContext";
 import { Select } from "../components/Select";
 
@@ -129,7 +128,7 @@ export default function Deploy() {
 
     for (const target of targets) {
       updateTarget(target.id, { status: "running", output: "" });
-      const portNum = parseInt(target.port) || 22;
+      const portNum = Number.parseInt(target.port) || 22;
       let success = false;
       let result = "";
       try {
@@ -179,6 +178,15 @@ export default function Deploy() {
     return null;
   };
 
+  let deployButtonLabel: string;
+  if (deploying) {
+    deployButtonLabel = "Deploying…";
+  } else if (isBatch) {
+    deployButtonLabel = "Batch Deploy Now";
+  } else {
+    deployButtonLabel = "Deploy Now";
+  }
+
   return (
     <div>
       <h2 className="text-2xl font-bold text-surface-50 mb-1">Deploy</h2>
@@ -212,7 +220,7 @@ export default function Deploy() {
                   />
                 </div>
                 {targets.length > 1 && t.status === "idle" && (
-                  <button onClick={() => removeTarget(t.id)}
+                  <button type="button" onClick={() => removeTarget(t.id)}
                     className="text-surface-300 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
                 )}
                 {statusBadge(t)}
@@ -252,16 +260,16 @@ export default function Deploy() {
 
         <div className="flex items-center gap-3 pt-1">
           {targets.length < 10 && (
-            <button onClick={addTarget} disabled={deploying}
+            <button type="button" onClick={addTarget} disabled={deploying}
               className="text-sm text-primary-400 hover:text-primary-300 font-medium disabled:opacity-40 transition-colors">
               + Add device
             </button>
           )}
           <div className="flex-1" />
           {error && <span className="text-red-400 text-sm">{error}</span>}
-          <button onClick={handleDeploy} disabled={deploying}
+          <button type="button" onClick={handleDeploy} disabled={deploying}
             className={`px-6 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50 transition-colors ${isBatch ? "bg-blue-600 hover:bg-blue-500" : "bg-green-700 hover:bg-green-600"}`}>
-            {deploying ? "Deploying…" : isBatch ? "Batch Deploy Now" : "Deploy Now"}
+            {deployButtonLabel}
           </button>
         </div>
       </div>
@@ -270,14 +278,18 @@ export default function Deploy() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold text-surface-50">Deploy History</h3>
-            <button onClick={clearHistory} className="text-xs text-surface-300 hover:text-red-400 transition-colors">
+            <button type="button" onClick={clearHistory} className="text-xs text-surface-300 hover:text-red-400 transition-colors">
               Clear history
             </button>
           </div>
           <div className="space-y-2">
             {history.map((entry, i) => (
-              <div key={i} className="bg-surface-700 border border-surface-500 rounded-xl overflow-hidden">
+              <div
+                key={`${entry.date}-${entry.host}-${entry.port}-${entry.profile}`}
+                className="bg-surface-700 border border-surface-500 rounded-xl overflow-hidden"
+              >
                 <button
+                  type="button"
                   onClick={() => setExpandedEntry(expandedEntry === i ? null : i)}
                   className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-600 transition-colors text-left"
                 >

@@ -11,9 +11,10 @@ interface SelectProps {
   options: SelectOption[];
   className?: string;
   disabled?: boolean;
+  id?: string;
 }
 
-export function Select({ value, onChange, options, className = "", disabled = false }: SelectProps) {
+export function Select({ value, onChange, options, className = "", disabled = false, id }: Readonly<SelectProps>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -32,6 +33,7 @@ export function Select({ value, onChange, options, className = "", disabled = fa
     <div ref={ref} className={`relative ${className}`}>
       <button
         type="button"
+        id={id}
         disabled={disabled}
         onClick={() => !disabled && setOpen((v) => !v)}
         className="input w-full flex items-center justify-between gap-2 text-left disabled:opacity-50 disabled:cursor-not-allowed"

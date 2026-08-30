@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { Device } from "../types";
 
@@ -23,7 +23,7 @@ const DevicesContext = createContext<DevicesContextValue>({
   setDeviceConnected: () => {},
 });
 
-export function DevicesProvider({ children }: { children: React.ReactNode }) {
+export function DevicesProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [status, setStatus] = useState<Record<string, PingStatus>>({});
   const [refreshing, setRefreshing] = useState(false);
@@ -73,8 +73,13 @@ export function DevicesProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const value = useMemo(
+    () => ({ devices, status, refreshing, reload, pingAll, setDeviceConnected }),
+    [devices, status, refreshing],
+  );
+
   return (
-    <DevicesContext.Provider value={{ devices, status, refreshing, reload, pingAll, setDeviceConnected }}>
+    <DevicesContext.Provider value={value}>
       {children}
     </DevicesContext.Provider>
   );

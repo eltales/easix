@@ -7,7 +7,7 @@ import { Select } from "../components/Select";
 const TABS = ["System", "Software", "User", "Network", "Security", "Scripts"] as const;
 type Tab = (typeof TABS)[number];
 
-const DISABLEABLE: Tab[] = ["System", "Software", "User", "Network", "Security"];
+const DISABLEABLE = new Set<Tab>(["System", "Software", "User", "Network", "Security"]);
 const SECTION_KEY: Record<string, string> = {
   System: "system", Software: "packages", User: "user",
   Network: "network", Security: "security",
@@ -77,6 +77,39 @@ const LOCALES = [
   "es_ES.UTF-8", "pt_BR.UTF-8", "ja_JP.UTF-8", "zh_CN.UTF-8",
 ];
 
+function tabButtonColorCls(active: boolean, disabled: boolean): string {
+  if (active) return "border-primary-500 text-primary-400";
+  if (disabled) return "border-transparent text-surface-300";
+  return "border-transparent text-surface-200 hover:text-surface-50";
+}
+
+function checkCmdPlaceholder(taskType: TaskType): string {
+  switch (taskType) {
+    case "package": return "Check cmd (e.g. command -v vim) — auto if empty";
+    case "service": return "Check cmd (e.g. systemctl is-active nginx) — auto if empty";
+    case "user":    return "Check cmd (e.g. id username) — auto if empty";
+    case "file":    return "File path to check (e.g. /etc/app.conf) — auto if empty";
+    default:        return "Custom idempotency check command";
+  }
+}
+
+function firewallLabel(isAlpine: boolean, isWindows: boolean): string {
+  if (isAlpine) return "Enable iptables firewall";
+  if (isWindows) return "Enable Windows Defender Firewall";
+  return "Enable UFW firewall";
+}
+
+function scriptModeHint(mode: string, isWindows: boolean, isAlpine: boolean): string {
+  if (mode === "run_once") {
+    return isWindows
+      ? "Script runs once as a temporary .ps1 file, then is removed."
+      : "Script runs once during provisioning, then is removed.";
+  }
+  if (isAlpine) return "Installed to /opt/easix/scripts/ and registered as an OpenRC service.";
+  if (isWindows) return String.raw`Saved to C:\easix\scripts\ and registered as a Scheduled Task at startup.`;
+  return "Installed to /opt/easix/scripts/ and registered as a systemd service.";
+}
+
 export default function Editor() {
   const { name: routeName } = useParams();
   const [searchParams] = useSearchParams();
@@ -91,11 +124,14 @@ export default function Editor() {
   const [saving, setSaving] = useState(false);
   const isAlpine   = profile.os === "alpine318";
   const isWindows  = profile.os.startsWith("windows");
-  const softwarePresets = isWindows
-    ? SOFTWARE_PRESETS_WIN
-    : isAlpine
-    ? SOFTWARE_PRESETS_ALPINE
-    : SOFTWARE_PRESETS_DEB;
+  let softwarePresets: SoftwareItem[];
+  if (isWindows) {
+    softwarePresets = SOFTWARE_PRESETS_WIN;
+  } else if (isAlpine) {
+    softwarePresets = SOFTWARE_PRESETS_ALPINE;
+  } else {
+    softwarePresets = SOFTWARE_PRESETS_DEB;
+  }
 
   useEffect(() => {
     if (routeName) {
@@ -169,7 +205,7 @@ export default function Editor() {
 
   const sectionWrapper = (t: Tab, children: React.ReactNode) => {
     const disabled = isDisabled(t);
-    const canDisable = DISABLEABLE.includes(t);
+    const canDisable = DISABLEABLE.has(t);
     return (
       <div>
         {canDisable && (
@@ -191,19 +227,28 @@ export default function Editor() {
   const inputCls = "input w-full";
   const hintCls  = "text-xs text-surface-300 mt-1";
 
+  let headerTitle: string;
+  if (isDuplicate) {
+    headerTitle = "Duplicate Profile";
+  } else if (routeName) {
+    headerTitle = `Edit: ${routeName}`;
+  } else {
+    headerTitle = "New Profile";
+  }
+
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-surface-50">
-          {isDuplicate ? "Duplicate Profile" : routeName ? `Edit: ${routeName}` : "New Profile"}
+          {headerTitle}
         </h2>
         <div className="flex gap-2">
-          <button onClick={() => navigate("/")}
+          <button type="button" onClick={() => navigate("/")}
             className="px-4 py-2 text-sm rounded-lg border border-surface-500 text-surface-100 hover:bg-surface-700 transition-colors">
             Cancel
           </button>
-          <button onClick={save} disabled={saving}
+          <button type="button" onClick={save} disabled={saving}
             className="px-4 py-2 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-50 transition-colors">
             {saving ? "Saving..." : "Save Profile"}
           </button>
@@ -212,8 +257,8 @@ export default function Editor() {
 
       {/* Profile name */}
       <div className="mb-6">
-        <label className={labelCls}>Profile name</label>
-        <input value={profileName} onChange={(e) => setProfileName(e.target.value)}
+        <label htmlFor="profile-name" className={labelCls}>Profile name</label>
+        <input id="profile-name" value={profileName} onChange={(e) => setProfileName(e.target.value)}
           placeholder="e.g. lab-workstation" className="w-64 input" />
         {routeName && !isDuplicate && profileName !== originalName && profileName.trim() && (
           <p className="text-xs text-amber-400 mt-1">
@@ -225,14 +270,8 @@ export default function Editor() {
       {/* Tabs */}
       <div className="flex gap-0.5 border-b border-surface-500 mb-6 flex-wrap">
         {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              tab === t
-                ? "border-primary-500 text-primary-400"
-                : isDisabled(t)
-                ? "border-transparent text-surface-300"
-                : "border-transparent text-surface-200 hover:text-surface-50"
-            }`}
+          <button type="button" key={t} onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${tabButtonColorCls(tab === t, isDisabled(t))}`}
           >
             {t}
             {isDisabled(t) && <span className="ml-1 text-xs text-surface-300">(off)</span>}
@@ -253,8 +292,9 @@ export default function Editor() {
           <div className="space-y-3 max-w-lg">
             {/* OS — always visible */}
             <div>
-              <label className={labelCls}>Operating System</label>
+              <label htmlFor="profile-os" className={labelCls}>Operating System</label>
               <Select
+                id="profile-os"
                 value={profile.os}
                 onChange={(v) => update("os", v as Profile["os"])}
                 options={[
@@ -273,8 +313,9 @@ export default function Editor() {
             <div className="border-t border-surface-500 pt-4 space-y-4">
               {/* Hostname */}
               <div>
-                <label className={labelCls}>Hostname</label>
+                <label htmlFor="profile-hostname" className={labelCls}>Hostname</label>
                 <input
+                  id="profile-hostname"
                   value={profile.hostname}
                   onChange={(e) => update("hostname", e.target.value)}
                   className={inputCls}
@@ -285,8 +326,9 @@ export default function Editor() {
               <div className="grid grid-cols-2 gap-4">
                 {/* Locale */}
                 <div>
-                  <label className={labelCls}>Locale</label>
+                  <label htmlFor="profile-locale" className={labelCls}>Locale</label>
                   <Select
+                    id="profile-locale"
                     value={profile.system.locale}
                     onChange={(v) => update("system", { ...profile.system, locale: v })}
                     options={[
@@ -301,8 +343,9 @@ export default function Editor() {
 
                 {/* Timezone */}
                 <div>
-                  <label className={labelCls}>Timezone</label>
+                  <label htmlFor="profile-timezone" className={labelCls}>Timezone</label>
                   <Select
+                    id="profile-timezone"
                     value={profile.system.timezone}
                     onChange={(v) => update("system", { ...profile.system, timezone: v })}
                     options={[
@@ -316,8 +359,9 @@ export default function Editor() {
               <div className="grid grid-cols-2 gap-4">
                 {/* Swap */}
                 <div>
-                  <label className={labelCls}>Swap (MB)</label>
+                  <label htmlFor="profile-swap" className={labelCls}>Swap (MB)</label>
                   <input
+                    id="profile-swap"
                     type="number"
                     min={128}
                     max={65536}
@@ -325,7 +369,7 @@ export default function Editor() {
                     onChange={(e) => setSwapRaw(e.target.value)}
                     onBlur={() => {
                       if (!swapRaw) { update("system", { ...profile.system, swap_mb: undefined }); return; }
-                      const v = Math.min(65536, Math.max(128, parseInt(swapRaw) || 128));
+                      const v = Math.min(65536, Math.max(128, Number.parseInt(swapRaw) || 128));
                       setSwapRaw(String(v));
                       update("system", { ...profile.system, swap_mb: v });
                     }}
@@ -339,8 +383,9 @@ export default function Editor() {
                 {/* GRUB / Extlinux timeout */}
                 {!isWindows && (
                   <div>
-                    <label className={labelCls}>{isAlpine ? "Extlinux timeout (×100ms)" : "GRUB timeout (sec)"}</label>
+                    <label htmlFor="profile-grub-timeout" className={labelCls}>{isAlpine ? "Extlinux timeout (×100ms)" : "GRUB timeout (sec)"}</label>
                     <input
+                      id="profile-grub-timeout"
                       type="number"
                       min={0}
                       max={isAlpine ? 600 : 60}
@@ -349,7 +394,7 @@ export default function Editor() {
                       onBlur={() => {
                         if (!grubRaw) { update("system", { ...profile.system, grub_timeout: undefined }); return; }
                         const max = isAlpine ? 600 : 60;
-                        const v = Math.min(max, Math.max(0, parseInt(grubRaw) || 0));
+                        const v = Math.min(max, Math.max(0, Number.parseInt(grubRaw) || 0));
                         setGrubRaw(String(v));
                         update("system", { ...profile.system, grub_timeout: v });
                       }}
@@ -393,7 +438,7 @@ export default function Editor() {
                   const addedIdx = profile.packages.findIndex((p) => p.name === preset.name);
                   const added = addedIdx !== -1;
                   return (
-                    <button key={preset.name}
+                    <button type="button" key={preset.name}
                       onClick={() => added ? removeSoftwareItem(addedIdx) : addSoftwareItem(preset)}
                       className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                         added
@@ -404,7 +449,7 @@ export default function Editor() {
                     </button>
                   );
                 })}
-                <button onClick={addCustomSoftwareItem}
+                <button type="button" onClick={addCustomSoftwareItem}
                   className="px-3 py-1.5 text-sm rounded-lg border border-dashed border-surface-400 text-surface-200 hover:border-primary-500 hover:text-primary-400 transition-colors">
                   + Custom
                 </button>
@@ -432,7 +477,7 @@ export default function Editor() {
                             options={TASK_TYPE_OPTIONS}
                           />
                         </div>
-                        <button onClick={() => removeSoftwareItem(i)}
+                        <button type="button" onClick={() => removeSoftwareItem(i)}
                           className="px-2 py-1.5 text-sm text-red-400 hover:bg-red-900/20 rounded-lg transition-colors">
                           Remove
                         </button>
@@ -442,13 +487,7 @@ export default function Editor() {
                           <input
                             value={item.check_cmd ?? ""}
                             onChange={(e) => updateSoftwareCheckCmd(i, e.target.value)}
-                            placeholder={
-                              item.task_type === "package" ? "Check cmd (e.g. command -v vim) — auto if empty" :
-                              item.task_type === "service" ? "Check cmd (e.g. systemctl is-active nginx) — auto if empty" :
-                              item.task_type === "user"    ? "Check cmd (e.g. id username) — auto if empty" :
-                              item.task_type === "file"    ? "File path to check (e.g. /etc/app.conf) — auto if empty" :
-                              "Custom idempotency check command"
-                            }
+                            placeholder={checkCmdPlaceholder(item.task_type)}
                             className="w-full input font-mono text-xs text-surface-300"
                           />
                         </div>
@@ -460,13 +499,13 @@ export default function Editor() {
                               placeholder={isWindows ? "e.g. winget install --id Git.Git -e --silent" : "e.g. apt-get install -y vim"}
                               className="flex-1 input font-mono text-xs" />
                             {item.commands.length > 1 && (
-                              <button onClick={() => removeSoftwareCommand(i, ci)}
+                              <button type="button" onClick={() => removeSoftwareCommand(i, ci)}
                                 className="text-surface-300 hover:text-red-400 px-2 transition-colors">×</button>
                             )}
                           </div>
                         ))}
                       </div>
-                      <button onClick={() => addSoftwareCommand(i)}
+                      <button type="button" onClick={() => addSoftwareCommand(i)}
                         className="mt-2 text-xs text-primary-400 hover:text-primary-300 transition-colors">
                         + Add command
                       </button>
@@ -482,8 +521,8 @@ export default function Editor() {
         {tab === "User" && sectionWrapper("User",
           <div className="space-y-4 max-w-md">
             <div>
-              <label className={labelCls}>Username</label>
-              <input value={profile.user.name} onChange={(e) => update("user", { ...profile.user, name: e.target.value })} className={inputCls} />
+              <label htmlFor="profile-username" className={labelCls}>Username</label>
+              <input id="profile-username" value={profile.user.name} onChange={(e) => update("user", { ...profile.user, name: e.target.value })} className={inputCls} />
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={profile.user.sudo} onChange={(e) => update("user", { ...profile.user, sudo: e.target.checked })} className="rounded accent-primary-500" />
@@ -496,8 +535,9 @@ export default function Editor() {
         {tab === "Network" && sectionWrapper("Network",
           <div className="space-y-4 max-w-md">
             <div>
-              <label className={labelCls}>Mode</label>
+              <label htmlFor="network-mode" className={labelCls}>Mode</label>
               <Select
+                id="network-mode"
                 value={profile.network.mode}
                 onChange={(v) => update("network", { ...profile.network, mode: v as "dhcp" | "static" })}
                 options={[{ value: "dhcp", label: "DHCP" }, { value: "static", label: "Static" }]}
@@ -506,16 +546,16 @@ export default function Editor() {
             {profile.network.mode === "static" && (
               <>
                 <div>
-                  <label className={labelCls}>IP Address (CIDR)</label>
-                  <input value={profile.network.address || ""} onChange={(e) => update("network", { ...profile.network, address: e.target.value })} placeholder="192.168.1.100/24" className={inputCls} />
+                  <label htmlFor="network-address" className={labelCls}>IP Address (CIDR)</label>
+                  <input id="network-address" value={profile.network.address || ""} onChange={(e) => update("network", { ...profile.network, address: e.target.value })} placeholder="192.168.1.100/24" className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Gateway</label>
-                  <input value={profile.network.gateway || ""} onChange={(e) => update("network", { ...profile.network, gateway: e.target.value })} placeholder="192.168.1.1" className={inputCls} />
+                  <label htmlFor="network-gateway" className={labelCls}>Gateway</label>
+                  <input id="network-gateway" value={profile.network.gateway || ""} onChange={(e) => update("network", { ...profile.network, gateway: e.target.value })} placeholder="192.168.1.1" className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>DNS</label>
-                  <input value={profile.network.dns || ""} onChange={(e) => update("network", { ...profile.network, dns: e.target.value })} placeholder="8.8.8.8" className={inputCls} />
+                  <label htmlFor="network-dns" className={labelCls}>DNS</label>
+                  <input id="network-dns" value={profile.network.dns || ""} onChange={(e) => update("network", { ...profile.network, dns: e.target.value })} placeholder="8.8.8.8" className={inputCls} />
                 </div>
               </>
             )}
@@ -528,12 +568,12 @@ export default function Editor() {
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={profile.security.ufw} onChange={(e) => update("security", { ...profile.security, ufw: e.target.checked })} className="rounded accent-primary-500" />
               <span className="text-sm text-surface-100">
-                {isAlpine ? "Enable iptables firewall" : isWindows ? "Enable Windows Defender Firewall" : "Enable UFW firewall"}
+                {firewallLabel(isAlpine, isWindows)}
               </span>
             </label>
             <div>
-              <label className={labelCls}>SSH Public Key</label>
-              <textarea value={profile.security.ssh_key || ""} onChange={(e) => update("security", { ...profile.security, ssh_key: e.target.value || undefined })}
+              <label htmlFor="security-ssh-key" className={labelCls}>SSH Public Key</label>
+              <textarea id="security-ssh-key" value={profile.security.ssh_key || ""} onChange={(e) => update("security", { ...profile.security, ssh_key: e.target.value || undefined })}
                 placeholder="ssh-rsa AAAA..." rows={3}
                 className="input w-full font-mono resize-none" />
             </div>
@@ -545,7 +585,7 @@ export default function Editor() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-surface-200">Add custom bash scripts to run during provisioning.</p>
-              <button onClick={addScript}
+              <button type="button" onClick={addScript}
                 className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition-colors">
                 + Add Script
               </button>
@@ -561,41 +601,34 @@ export default function Editor() {
                   <div key={i} className="border border-surface-500 rounded-xl p-4 bg-surface-800">
                     <div className="flex gap-3 mb-3">
                       <div className="flex-1">
-                        <label className="block text-xs font-medium text-surface-200 mb-1">Script name</label>
-                        <input value={script.name} onChange={(e) => updateScript(i, "name", e.target.value)}
+                        <label htmlFor={`script-name-${i}`} className="block text-xs font-medium text-surface-200 mb-1">Script name</label>
+                        <input id={`script-name-${i}`} value={script.name} onChange={(e) => updateScript(i, "name", e.target.value)}
                           placeholder="e.g. setup-db" className="input w-full" />
                       </div>
                       <div className="w-40">
-                        <label className="block text-xs font-medium text-surface-200 mb-1">Mode</label>
+                        <label htmlFor={`script-mode-${i}`} className="block text-xs font-medium text-surface-200 mb-1">Mode</label>
                         <Select
+                          id={`script-mode-${i}`}
                           value={script.mode}
                           onChange={(v) => updateScript(i, "mode", v)}
                           options={[{ value: "run_once", label: "Run once" }, { value: "autostart", label: "Autostart" }]}
                         />
                       </div>
                       <div className="flex items-end">
-                        <button onClick={() => removeScript(i)}
+                        <button type="button" onClick={() => removeScript(i)}
                           className="px-2 py-1.5 text-sm text-red-400 hover:bg-red-900/20 rounded-lg transition-colors">
                           Remove
                         </button>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-surface-200 mb-1">Content</label>
-                      <textarea value={script.content} onChange={(e) => updateScript(i, "content", e.target.value)}
+                      <label htmlFor={`script-content-${i}`} className="block text-xs font-medium text-surface-200 mb-1">Content</label>
+                      <textarea id={`script-content-${i}`} value={script.content} onChange={(e) => updateScript(i, "content", e.target.value)}
                         rows={6} className="input w-full font-mono text-xs resize-none"
                         placeholder={"#!/bin/bash\necho 'Hello from custom script'"} />
                     </div>
                     <p className={hintCls}>
-                      {script.mode === "run_once"
-                        ? isWindows
-                          ? "Script runs once as a temporary .ps1 file, then is removed."
-                          : "Script runs once during provisioning, then is removed."
-                        : isAlpine
-                        ? "Installed to /opt/easix/scripts/ and registered as an OpenRC service."
-                        : isWindows
-                        ? "Saved to C:\\easix\\scripts\\ and registered as a Scheduled Task at startup."
-                        : "Installed to /opt/easix/scripts/ and registered as a systemd service."}
+                      {scriptModeHint(script.mode, isWindows, isAlpine)}
                     </p>
                   </div>
                 ))}
