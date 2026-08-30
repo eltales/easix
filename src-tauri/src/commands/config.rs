@@ -45,35 +45,46 @@ struct ConfigBundle {
 
 // ── Export config (profiles + devices) ───────────────────────────────────────
 
+fn read_all_profiles(pdir: &PathBuf) -> Result<HashMap<String, Profile>, String> {
+    let mut profiles: HashMap<String, Profile> = HashMap::new();
+    for entry in fs::read_dir(pdir).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(p) = serde_json::from_str::<Profile>(&content) {
+                profiles.insert(stem, p);
+            }
+        }
+    }
+    Ok(profiles)
+}
+
+fn read_all_devices(ddir: &PathBuf) -> Result<Vec<Device>, String> {
+    let mut devices: Vec<Device> = Vec::new();
+    for entry in fs::read_dir(ddir).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(d) = serde_json::from_str::<Device>(&content) {
+                devices.push(d);
+            }
+        }
+    }
+    Ok(devices)
+}
+
 #[command]
 pub async fn export_config(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let pdir = profiles_dir()?;
     let ddir = devices_dir()?;
 
-    let mut profiles: HashMap<String, Profile> = HashMap::new();
-    for entry in fs::read_dir(&pdir).map_err(|e| e.to_string())? {
-        let path = entry.map_err(|e| e.to_string())?.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("json") {
-            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(p) = serde_json::from_str::<Profile>(&content) {
-                    profiles.insert(stem, p);
-                }
-            }
-        }
-    }
-
-    let mut devices: Vec<Device> = Vec::new();
-    for entry in fs::read_dir(&ddir).map_err(|e| e.to_string())? {
-        let path = entry.map_err(|e| e.to_string())?.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("json") {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(d) = serde_json::from_str::<Device>(&content) {
-                    devices.push(d);
-                }
-            }
-        }
-    }
+    let profiles = read_all_profiles(&pdir)?;
+    let devices = read_all_devices(&ddir)?;
 
     if profiles.is_empty() && devices.is_empty() {
         return Err("Nothing to export".into());
