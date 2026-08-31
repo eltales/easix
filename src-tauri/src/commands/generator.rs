@@ -57,8 +57,16 @@ pub fn generate_script(profile: Profile) -> Result<String, String> {
     ctx.insert("is_windows",   &win);
     ctx.insert("win_locale_tag", &win_locale_tag);
     ctx.insert("profile",      &profile);
-    tera.render(tpl, &ctx)
-        .map_err(|e| format!("Render error: {e}"))
+    let rendered = tera.render(tpl, &ctx)
+        .map_err(|e| format!("Render error: {e}"))?;
+    // Templates are checked out with CRLF line endings on Windows dev machines;
+    // a shell script with \r\n breaks `set -o pipefail` and heredoc terminators
+    // on the Linux target, so force LF endings for shell (non-Windows) output.
+    if win {
+        Ok(rendered)
+    } else {
+        Ok(rendered.replace("\r\n", "\n"))
+    }
 }
 
 fn validate_unix_line(i: usize, trimmed: &str, warnings: &mut Vec<String>) {
@@ -323,6 +331,29 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_linux_locale_installs_locales_package_first() {
+        // Regression test: a minimal Debian/Ubuntu netinst doesn't ship the
+        // `locales` package, so locale-gen/update-locale don't exist yet.
+        let mut p = base_profile();
+        p.system.locale = "en_US.UTF-8".into();
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("apt-get install -y -qq locales"));
+    }
+
+    #[test]
+    fn test_generate_linux_locale_enabled_in_locale_gen_before_generating() {
+        // Regression test: `locale-gen en_US.UTF-8` as a bare CLI argument
+        // silently generates nothing unless the locale is first uncommented
+        // in /etc/locale.gen — update-locale then fails with "invalid locale
+        // settings" because the compiled locale never actually exists.
+        let mut p = base_profile();
+        p.system.locale = "en_US.UTF-8".into();
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("en_US.UTF-8 UTF-8\" >> /etc/locale.gen"));
+        assert!(script.contains("locale-gen\n"));
+    }
+
+    #[test]
     fn test_generate_user_section_creates_user() {
         let script = generate_script(base_profile()).unwrap();
         assert!(script.contains("useradd"));
@@ -394,6 +425,15 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_linux_script_has_no_crlf() {
+        // Regression test: the .tera template files can be checked out with
+        // CRLF line endings on Windows dev machines, which breaks `set -o
+        // pipefail` and heredoc terminators on the Linux target.
+        let script = generate_script(base_profile()).unwrap();
+        assert!(!script.contains('\r'), "Linux script must use LF-only line endings");
+    }
+
+    #[test]
     fn test_generate_swap_creates_swapfile() {
         let mut p = base_profile();
         p.system.swap_mb = Some(2048);
@@ -457,6 +497,16 @@ mod tests {
     fn test_generate_returns_shebang_for_ubuntu() {
         let script = generate_script(base_profile()).unwrap();
         assert!(script.contains("#!/usr/bin/env bash"));
+    }
+
+    #[test]
+    fn test_generate_linux_script_exports_full_path() {
+        // Regression test: SSH exec channels (and `su` without a login shell)
+        // commonly hand scripts a minimal PATH lacking /usr/sbin, so binaries
+        // like locale-gen/update-locale/useradd silently "aren't found" even
+        // though they're installed.
+        let script = generate_script(base_profile()).unwrap();
+        assert!(script.contains("export PATH=") && script.contains("/usr/sbin"));
     }
 
     #[test]

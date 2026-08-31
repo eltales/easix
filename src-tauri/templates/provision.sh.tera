@@ -1,6 +1,7 @@
 {% if is_alpine %}
 #!/bin/sh
 set -eu
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 # =============================================================================
 # Easix provisioning script
@@ -24,6 +25,7 @@ echo "[OK] Alpine bootstrap: done"
 {% else %}
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 # =============================================================================
 # Easix provisioning script
@@ -59,7 +61,10 @@ LOCALE_EOF
 chmod +x /etc/profile.d/locale.sh
 {% else %}
 echo "[STEP] Locale: setting to {{ profile.system.locale }}..."
-locale-gen "{{ profile.system.locale }}" || true
+command -v locale-gen >/dev/null 2>&1 || apt-get install -y -qq locales
+grep -q "^{{ profile.system.locale }} UTF-8" /etc/locale.gen 2>/dev/null || \
+    echo "{{ profile.system.locale }} UTF-8" >> /etc/locale.gen
+locale-gen
 update-locale LANG="{{ profile.system.locale }}"
 {% endif %}
 echo "[OK] Locale: {{ profile.system.locale }}"

@@ -1,0 +1,2 @@
+src-tauri/templates/*.sh.tera text eol=lf
+src-tauri/templates/*.tera text eol=lf

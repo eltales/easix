@@ -1,6 +1,38 @@
 # planning.md — Easix
 
-*Ostatnia aktualizacja: 2026-08-30*
+*Ostatnia aktualizacja: 2026-09-01*
+
+---
+
+## TASK-037: Live-test deployu na prawdziwej VM Debian — done
+
+Postawiono jednorazową VM Debian 13 w VMware (`D:\VMs\debian-test`, 192.168.230.130,
+tester/admin) i przepuszczono przez nią realny skrypt wygenerowany przez easix
+(profil: debian11, pakiety htop+curl, user 'deploy', firewall=enabled, custom
+script). Wykryto i naprawiono 4 realne bugi w `provision.sh.tera`/`generator.rs`,
+niewidoczne dla żadnego testu jednostkowego (asercje typu `contains()` nie
+łapią końców linii ani brakujących binarek w PATH):
+
+1. **CRLF w szablonach** — `provision.sh.tera` był na dysku z końcami linii
+   CRLF (checkout Windows), więc KAŻDY wygenerowany skrypt Linux dziedziczył
+   `\r\n`, co wywalało `set -euo pipefail` i psuło heredocs. Fix:
+   `generate_script` w `generator.rs` normalizuje `\r\n`→`\n` dla skryptów
+   nie-Windows. Dodano `.gitattributes` (`eol=lf` dla `.tera`) jako drugą linię
+   obrony.
+2. **Brak pakietu `locales`** — minimalna instalacja Debiana nie ma
+   `locale-gen`/`update-locale`. Fix: `apt-get install -y -qq locales` przed
+   ich użyciem.
+3. **PATH bez `/usr/sbin`** — sesje SSH exec / `su` bez loginu często dają
+   PATH bez `/usr/sbin`, więc `locale-gen`, `update-locale`, `useradd` itp.
+   "nie istnieją" mimo że są zainstalowane. Fix: jawny `export PATH=...` z
+   `/usr/sbin:/sbin` na początku skryptu (obie gałęzie: alpine i debian/ubuntu).
+4. **`locale-gen <locale>` jako argument nic nie generuje** — trzeba najpierw
+   dopisać locale do `/etc/locale.gen` i wywołać `locale-gen` bez argumentów.
+
+Po wszystkich poprawkach pełny deploy przeszedł od początku do końca na
+żywej maszynie: pakiety, user+sudo, UFW (SSH przetrwało włączenie zapory —
+sprawdzone przez faktyczne ponowne połączenie SSH), custom script.
+Testy Rust: 63/63 → 64/64 z nowymi regresjami dla wszystkich 4 przypadków.
 
 ---
 
