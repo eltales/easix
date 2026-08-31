@@ -4,6 +4,32 @@
 
 ---
 
+## TASK-038: Live-test deployu na prawdziwej VM Windows 11 — w trakcie
+
+Status: **przerwane, kontynuacja następnym razem**
+
+Postawiono VM `D:\VMs\windows-test` (Windows 11 Enterprise Evaluation 25H2,
+dysk SATA nie SCSI — lsilogic nie miał wbudowanego sterownika w instalatorze,
+VNC port 5902 hasło "wintest"). Ominięto wymagania TPM/Secure Boot/RAM/CPU
+przez `HKLM\SYSTEM\Setup\LabConfig` (bypass keys) w Shift+F10 podczas Setup —
+uwaga: `vncdo type` bez `--force-caps` psuje znaki `_`, `$`, `(`, `)` (zamienia
+je na inne znaki) — **zawsze używać `--force-caps`** przy wpisywaniu przez VNC
+na tej maszynie.
+
+Instalacja + OOBE przeszły przez: konto lokalne przez "Sign-in options" →
+"Domain join instead" (Enterprise edition to oferuje, unika Microsoft account),
+user `tester`/`Admin1234!`. Przerwane na etapie finalizacji profilu ("Please
+keep your PC on and plugged in") — VM nie doszła jeszcze do pulpitu.
+
+**Następny krok:** VM `windows-test.vmx` zostaje w tym stanie (host
+wyłączony, VM zapisana). Po starcie: `vmrun start windows-test.vmx nogui`,
+poczekać aż dojdzie do pulpitu, włączyć OpenSSH Server, potem wygenerować i
+przetestować `provision.ps1` (tak jak dla Debiana) — profil `windows2022`/
+`windows11`, sprawdzić firewall (`Set-NetFirewallProfile`), custom script
+(PowerShell), user creation.
+
+---
+
 ## TASK-037: Live-test deployu na prawdziwej VM Debian — done
 
 Postawiono jednorazową VM Debian 13 w VMware (`D:\VMs\debian-test`, 192.168.230.130,
