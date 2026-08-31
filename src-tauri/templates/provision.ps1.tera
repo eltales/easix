@@ -205,12 +205,17 @@ try {
 {% endif %}
 
 {% if not dis_security %}
-{% if profile.security.ufw %}
+{% if profile.security.firewall == "enabled" %}
 # --- Firewall ---
 Write-Host "[STEP] Firewall: enabling Windows Defender Firewall (deny incoming, allow SSH)..."
 Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True -DefaultInboundAction Block -DefaultOutboundAction Allow
 New-NetFirewallRule -DisplayName "Easix-AllowSSH" -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -ErrorAction SilentlyContinue | Out-Null
 Write-Host "[OK] Firewall: all profiles enabled (deny incoming, SSH allowed)"
+{% elif profile.security.firewall == "disabled" %}
+# --- Firewall ---
+Write-Host "[STEP] Firewall: disabling Windows Defender Firewall..."
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+Write-Host "[OK] Firewall: all profiles disabled"
 {% endif %}
 {% if profile.security.ssh_key %}
 # --- SSH key ---

@@ -135,10 +135,14 @@ pub struct NetworkConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
-    #[serde(default)]
-    pub ufw: bool,
+    #[serde(default = "default_firewall")]
+    pub firewall: String,
     #[serde(default)]
     pub ssh_key: Option<String>,
+}
+
+fn default_firewall() -> String {
+    "default".into()
 }
 
 impl Default for UserConfig {
@@ -165,7 +169,7 @@ impl Default for NetworkConfig {
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
-            ufw: false,
+            firewall: default_firewall(),
             ssh_key: None,
         }
     }
@@ -247,7 +251,7 @@ mod tests {
         assert_eq!(p.user.name, "admin");
         assert!(p.user.sudo);
         assert_eq!(p.network.mode, "dhcp");
-        assert!(!p.security.ufw);
+        assert_eq!(p.security.firewall, "default");
         assert!(p.system.ntp);
         assert!(!p.system.enable_tpm);
         assert!(p.packages.is_empty());
@@ -311,7 +315,7 @@ mod tests {
     #[test]
     fn test_security_config_default() {
         let sc = SecurityConfig::default();
-        assert!(!sc.ufw);
+        assert_eq!(sc.firewall, "default");
         assert!(sc.ssh_key.is_none());
     }
 }

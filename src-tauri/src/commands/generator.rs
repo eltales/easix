@@ -243,7 +243,7 @@ mod tests {
             packages: vec![],
             user: UserConfig { name: "admin".into(), sudo: true, initial_password: None },
             network: NetworkConfig { mode: "dhcp".into(), address: None, gateway: None, dns: None },
-            security: SecurityConfig { ufw: false, ssh_key: None },
+            security: SecurityConfig { firewall: "default".into(), ssh_key: None },
             system: SystemConfig {
                 locale: "en_US.UTF-8".into(),
                 timezone: "UTC".into(),
@@ -405,9 +405,33 @@ mod tests {
     #[test]
     fn test_generate_ufw_enabled() {
         let mut p = base_profile();
-        p.security.ufw = true;
+        p.security.firewall = "enabled".into();
         let script = generate_script(p).unwrap();
-        assert!(script.contains("ufw"));
+        assert!(script.contains("ufw --force enable"));
+    }
+
+    #[test]
+    fn test_generate_ufw_disabled() {
+        let mut p = base_profile();
+        p.security.firewall = "disabled".into();
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("ufw --force disable"));
+    }
+
+    #[test]
+    fn test_generate_firewall_default_skips_section() {
+        let script = generate_script(base_profile()).unwrap();
+        assert!(!script.contains("ufw"));
+    }
+
+    #[test]
+    fn test_generate_alpine_iptables_disabled() {
+        let mut p = base_profile();
+        p.os = "alpine318".into();
+        p.security.firewall = "disabled".into();
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("iptables -P INPUT ACCEPT"));
+        assert!(script.contains("rc-update del iptables default"));
     }
 
     #[test]
@@ -555,11 +579,19 @@ mod tests {
     #[test]
     fn test_generate_windows11_firewall_default_deny() {
         let mut p = windows11_profile();
-        p.security.ufw = true;
+        p.security.firewall = "enabled".into();
         let script = generate_script(p).unwrap();
         assert!(script.contains("-DefaultInboundAction Block"));
         assert!(script.contains("New-NetFirewallRule"));
         assert!(script.contains("LocalPort 22"));
+    }
+
+    #[test]
+    fn test_generate_windows11_firewall_disabled() {
+        let mut p = windows11_profile();
+        p.security.firewall = "disabled".into();
+        let script = generate_script(p).unwrap();
+        assert!(script.contains("-Enabled False"));
     }
 
     #[test]

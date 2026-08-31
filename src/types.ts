@@ -21,7 +21,7 @@ export interface NetworkConfig {
 }
 
 export interface SecurityConfig {
-  ufw: boolean;
+  firewall: "default" | "enabled" | "disabled";
   ssh_key?: string;
 }
 
@@ -111,7 +111,7 @@ export const DEFAULT_PROFILE: Profile = {
   packages: [],
   user: { name: "admin", sudo: true },
   network: { mode: "dhcp" },
-  security: { ufw: false },
+  security: { firewall: "default" },
   system: { locale: "", timezone: "", enable_tpm: false, ntp: false },
   custom_scripts: [],
   disabled_sections: [],

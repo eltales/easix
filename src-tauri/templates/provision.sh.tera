@@ -294,7 +294,7 @@ echo "[OK] Network: static IP configured"
 {% endif %}
 
 {% if not dis_security %}
-{% if profile.security.ufw %}
+{% if profile.security.firewall == "enabled" %}
 # --- Firewall ---
 {% if is_alpine %}
 echo "[STEP] Firewall: installing and configuring iptables..."
@@ -316,6 +316,26 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow ssh
 echo "[OK] Firewall: UFW enabled (deny incoming, allow SSH)"
+{% endif %}
+{% elif profile.security.firewall == "disabled" %}
+# --- Firewall ---
+{% if is_alpine %}
+echo "[STEP] Firewall: disabling iptables..."
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -F
+rc-update del iptables default 2>/dev/null || true
+/etc/init.d/iptables save 2>/dev/null || true
+echo "[OK] Firewall: iptables disabled (all traffic accepted)"
+{% else %}
+echo "[STEP] Firewall: disabling UFW..."
+if command -v ufw >/dev/null 2>&1; then
+    ufw --force disable
+    echo "[OK] Firewall: UFW disabled"
+else
+    echo "[OK] Firewall: UFW not installed, nothing to disable"
+fi
 {% endif %}
 {% endif %}
 

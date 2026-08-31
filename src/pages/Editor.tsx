@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { Profile, CustomScript, DEFAULT_PROFILE, SoftwareItem, TaskType, OS_OPTIONS } from "../types";
+import { Profile, CustomScript, DEFAULT_PROFILE, SoftwareItem, TaskType, OS_OPTIONS, SecurityConfig } from "../types";
 import { Select } from "../components/Select";
 
 const TABS = ["System", "Software", "User", "Network", "Security", "Scripts"] as const;
@@ -93,10 +93,26 @@ function checkCmdPlaceholder(taskType: TaskType): string {
   }
 }
 
-function firewallLabel(isAlpine: boolean, isWindows: boolean): string {
-  if (isAlpine) return "Enable iptables firewall";
-  if (isWindows) return "Enable Windows Defender Firewall";
-  return "Enable UFW firewall";
+function firewallName(isAlpine: boolean, isWindows: boolean): string {
+  if (isAlpine) return "iptables";
+  if (isWindows) return "Windows Defender Firewall";
+  return "UFW";
+}
+
+function firewallOptions(isAlpine: boolean, isWindows: boolean) {
+  const name = firewallName(isAlpine, isWindows);
+  return [
+    { value: "default", label: "Default (leave untouched)" },
+    { value: "enabled", label: `Enabled (${name}: deny incoming, allow SSH)` },
+    { value: "disabled", label: `Disabled (${name} turned off)` },
+  ];
+}
+
+function firewallDescription(mode: string, isAlpine: boolean, isWindows: boolean): string {
+  const name = firewallName(isAlpine, isWindows);
+  if (mode === "enabled") return `${name} will be installed/enabled with incoming traffic blocked by default, except SSH.`;
+  if (mode === "disabled") return `${name} will be explicitly turned off, even if it was previously enabled on this machine.`;
+  return "The provisioning script won't touch the firewall — it stays in whatever state the machine already has.";
 }
 
 function scriptModeHint(mode: string, isWindows: boolean, isAlpine: boolean): string {
@@ -199,7 +215,7 @@ export default function Editor() {
     const u = [...profile.packages]; u[i] = { ...u[i], commands: u[i].commands.filter((_, idx) => idx !== ci) }; update("packages", u);
   };
   const addScript = () =>
-    update("custom_scripts", [...profile.custom_scripts, { name: "", content: "#!/bin/bash\n", mode: "run_once" }]);
+    update("custom_scripts", [...profile.custom_scripts, { name: "", content: isWindows ? "" : "#!/bin/bash\n", mode: "run_once" }]);
   const updateScript = (index: number, field: keyof CustomScript, value: string) => {
     const u = [...profile.custom_scripts]; u[index] = { ...u[index], [field]: value }; update("custom_scripts", u);
   };
@@ -568,12 +584,18 @@ export default function Editor() {
         {/* ── Security ───────────────────────────────────────────────────── */}
         {tab === "Security" && sectionWrapper("Security",
           <div className="space-y-4 max-w-md">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={profile.security.ufw} onChange={(e) => update("security", { ...profile.security, ufw: e.target.checked })} className="rounded accent-primary-500" />
-              <span className="text-sm text-surface-100">
-                {firewallLabel(isAlpine, isWindows)}
-              </span>
-            </label>
+            <div>
+              <label htmlFor="security-firewall" className={labelCls}>Firewall</label>
+              <Select
+                id="security-firewall"
+                value={profile.security.firewall}
+                onChange={(v) => update("security", { ...profile.security, firewall: v as SecurityConfig["firewall"] })}
+                options={firewallOptions(isAlpine, isWindows)}
+              />
+              <p className="text-xs text-surface-300 mt-1.5">
+                {firewallDescription(profile.security.firewall, isAlpine, isWindows)}
+              </p>
+            </div>
             <div>
               <label htmlFor="security-ssh-key" className={labelCls}>SSH Public Key</label>
               <textarea id="security-ssh-key" value={profile.security.ssh_key || ""} onChange={(e) => update("security", { ...profile.security, ssh_key: e.target.value || undefined })}
@@ -628,7 +650,7 @@ export default function Editor() {
                       <label htmlFor={`script-content-${i}`} className="block text-xs font-medium text-surface-200 mb-1">Content</label>
                       <textarea id={`script-content-${i}`} value={script.content} onChange={(e) => updateScript(i, "content", e.target.value)}
                         rows={6} className="input w-full font-mono text-xs resize-none"
-                        placeholder={"#!/bin/bash\necho 'Hello from custom script'"} />
+                        placeholder={isWindows ? "Write-Host 'Hello from custom script'" : "#!/bin/bash\necho 'Hello from custom script'"} />
                     </div>
                     <p className={hintCls}>
                       {scriptModeHint(script.mode, isWindows, isAlpine)}
