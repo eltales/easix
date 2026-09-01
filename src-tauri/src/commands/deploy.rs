@@ -275,14 +275,10 @@ pub fn deploy_ssh(
 
         emit_deploy_log(&app, &target_id, "[easix] Uploading script...");
         let script_bytes = script.as_bytes();
-        let mut remote_file = sess
-            .scp_send(
-                std::path::Path::new(remote_path),
-                0o755,
-                script_bytes.len() as u64,
-                None,
-            )
-            .map_err(|e| format!("SCP upload failed: {e}"))?;
+        let sftp = sess.sftp().map_err(|e| format!("SFTP init failed: {e}"))?;
+        let mut remote_file = sftp
+            .create(std::path::Path::new(remote_path))
+            .map_err(|e| format!("SFTP upload failed: {e}"))?;
         std::io::Write::write_all(&mut remote_file, script_bytes)
             .map_err(|e| format!("Write failed: {e}"))?;
         drop(remote_file);
