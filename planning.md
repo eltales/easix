@@ -4,29 +4,39 @@
 
 ---
 
-## TASK-038: Live-test deployu na prawdziwej VM Windows 11 — w trakcie
+## TASK-038: Live-test deployu na prawdziwej VM Windows 11 — done
 
-Status: **przerwane, kontynuacja następnym razem**
+VM `D:\VMs\windows-test` (Windows 11 Enterprise Evaluation 25H2, build
+26100.6584, dysk SATA nie SCSI — lsilogic nie ma wbudowanego sterownika w
+instalatorze, VNC port 5902 hasło "wintest"). Wymagania TPM/Secure
+Boot/RAM/CPU ominięte przez `HKLM\SYSTEM\Setup\LabConfig` (Shift+F10 podczas
+Setup). Konto lokalne przez "Sign-in options" → "Domain join instead"
+(Enterprise edition to oferuje, omija Microsoft account) — user
+`tester`/`Admin1234!`, lokalny administrator.
 
-Postawiono VM `D:\VMs\windows-test` (Windows 11 Enterprise Evaluation 25H2,
-dysk SATA nie SCSI — lsilogic nie miał wbudowanego sterownika w instalatorze,
-VNC port 5902 hasło "wintest"). Ominięto wymagania TPM/Secure Boot/RAM/CPU
-przez `HKLM\SYSTEM\Setup\LabConfig` (bypass keys) w Shift+F10 podczas Setup —
-uwaga: `vncdo type` bez `--force-caps` psuje znaki `_`, `$`, `(`, `)` (zamienia
-je na inne znaki) — **zawsze używać `--force-caps`** przy wpisywaniu przez VNC
-na tej maszynie.
+**Ważne dla przyszłych sesji:** `vncdo type` bez `--force-caps` psuje znaki
+`_ $ ( )` (np. `REG_DWORD` → `reg-dword`) — **zawsze używać `--force-caps`**
+na tej maszynie. `Add-WindowsCapability`/`DISM /Add-Capability` dla OpenSSH
+potrafi wyglądać na zawieszone (pasek postępu w konsoli PowerShell nie
+odświeża się widocznie przez VNC) mimo że `TiWorker.exe` realnie liczy CPU w
+tle — sprawdzać przez `(Get-Process TiWorker).CPU` w osobnym oknie zamiast
+ufać samemu paskowi; operacja trwała ~10 minut na tej VM (2 vCPU/4GB RAM).
 
-Instalacja + OOBE przeszły przez: konto lokalne przez "Sign-in options" →
-"Domain join instead" (Enterprise edition to oferuje, unika Microsoft account),
-user `tester`/`Admin1234!`. Przerwane na etapie finalizacji profilu ("Please
-keep your PC on and plugged in") — VM nie doszła jeszcze do pulpitu.
+OpenSSH Server włączony (`Start-Service sshd` + firewall rule na port 22).
+Wygenerowano i uruchomiono realny `provision.ps1` (profil windows11, user
+`deploy`, `security.firewall="disabled"`, custom script PowerShell) —
+**pełny sukces, `=== Easix provisioning completed ===`, exit 0**:
+- User `deploy` utworzony i dodany do Administrators
+- Firewall wyłączony na wszystkich 3 profilach (`Get-NetFirewallProfile`
+  potwierdza `Enabled: False` na Domain/Private/Public) — SSH przetrwało
+- Custom script wykonany, plik znacznikowy zapisany poprawnie
 
-**Następny krok:** VM `windows-test.vmx` zostaje w tym stanie (host
-wyłączony, VM zapisana). Po starcie: `vmrun start windows-test.vmx nogui`,
-poczekać aż dojdzie do pulpitu, włączyć OpenSSH Server, potem wygenerować i
-przetestować `provision.ps1` (tak jak dla Debiana) — profil `windows2022`/
-`windows11`, sprawdzić firewall (`Set-NetFirewallProfile`), custom script
-(PowerShell), user creation.
+**Jedno drobne, nie-easix-owe zaobserwowane zachowanie:** `Set-TimeZone -Name
+UTC` zwraca błąd "not found on the local computer" na tym konkretnym
+buildzie, mimo że `Get-TimeZone -ListAvailable` faktycznie listuje "UTC" —
+skrypt poprawnie łapie to jako `[WARN]` i kontynuuje, nie jest to blokujące.
+Nie zmieniano kodu w tym miejscu — wygląda na kwirk tego builda/VM, nie na
+błąd w szablonie.
 
 ---
 
