@@ -196,9 +196,9 @@ Backend, frontend, deploy SSH, devices CRUD, batch deploy, import/export .esx, d
 
 ### TASK-034: Domknięcie Settings/auto-update/version-bump
 - Status: pending
-- [ ] Push commitu `dbd981a` na `origin/main` (na razie tylko lokalnie)
-- [ ] Dodać sekret GitHub Actions `TAURI_SIGNING_PRIVATE_KEY` (wartość podana
-      użytkownikowi w czacie; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` zostawić puste)
+- [x] Push na `origin/main` (zrobione, wielokrotnie od tego czasu)
+- [x] Sekret GitHub Actions `TAURI_SIGNING_PRIVATE_KEY` dodany, build z nim
+      przeszedł bez błędu o brakującym kluczu (silny dowód poprawności)
 - [ ] Zrobić pierwszy prawdziwy release: `npm run bump patch` → commit → `git tag vX.Y.Z`
       → push + push --tags → sprawdzić, czy `release.yml` przechodzi i publikuje
       `latest.json` (dopiero wtedy auto-update ma do czego się odnosić)
@@ -208,16 +208,16 @@ Backend, frontend, deploy SSH, devices CRUD, batch deploy, import/export .esx, d
 - Code-signing (Authenticode / SmartScreen) — świadomie odłożone do momentu
   wypuszczenia narzędzia poza jednego użytkownika, nie ruszać bez pytania
 
-### TASK-028: Ikony OS w Devices
-- Status: pending
+### TASK-028: Ikony OS w Devices — done
+- Status: done (zweryfikowane w kodzie — było już zaimplementowane, nie stale)
 - Cel: inline SVG per OS zamiast kropki (ubuntu, debian, alpine, windows, unknown)
 - Status ping = kolor obwódki wokół ikony
-- Pliki: src/pages/Devices.tsx
+- Pliki: src/pages/Devices.tsx — OsSvg (per-OS <svg>) + OsIcon (obwódka wg PingStatus)
 
-### TASK-029: Walidacja pól numerycznych on blur
-- Status: pending
+### TASK-029: Walidacja pól numerycznych on blur — done
+- Status: done (zweryfikowane w kodzie — było już zaimplementowane, nie stale)
 - Swap: min 128, max 65536 MB; GRUB: min 0, max 60 sec; Extlinux: min 0, max 600
-- Pliki: src/pages/Editor.tsx
+- Pliki: src/pages/Editor.tsx — swapRaw/grubRaw + onBlur clamping, progi zgodne ze specyfikacją
 
 ### TASK-030: Portable exe workflow — done
 - Potwierdzone przez użytkownika jako działające i używane w praktyce
