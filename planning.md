@@ -180,9 +180,11 @@ Backend, frontend, deploy SSH, devices CRUD, batch deploy, import/export .esx, d
 - tauri.conf.json: plugins.updater.pubkey (wygenerowany lokalnie przez
   `npx tauri signer generate --ci`, klucz BEZ hasła) + endpoints wskazujące na
   GitHub Releases latest.json
-- Prywatny klucz podpisujący NIE jest w repo — użytkownik musi dodać go sam
-  jako sekrety GitHub Actions (TAURI_SIGNING_PRIVATE_KEY, puste
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+- Prywatny klucz podpisujący NIE jest w repo — użytkownik trzyma go sam jako
+  sekrety GitHub Actions (TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD).
+  Klucz z hasłem zgubionym po drodze został 2026-09-01 zrotowany (nowy pubkey
+  w tauri.conf.json, nowy prywatny klucz + hasło w sekretach) — 0 użytkowników
+  z zainstalowaną apką w tym momencie, więc bez problemu zgodności
 - .github/workflows/release.yml (nowy) — tag v*.*.* buduje, podpisuje i publikuje
   draft release z tauri-apps/tauri-action
 - UI: zakładka "Updates" w Settings drawer — Check for Updates / Install & Restart
@@ -195,13 +197,17 @@ Backend, frontend, deploy SSH, devices CRUD, batch deploy, import/export .esx, d
 - Przetestowane na kopiach plików (patch 0.1.0 -> 0.1.1), oryginały nietknięte
 
 ### TASK-034: Domknięcie Settings/auto-update/version-bump
-- Status: pending
-- [x] Push na `origin/main` (zrobione, wielokrotnie od tego czasu)
-- [x] Sekret GitHub Actions `TAURI_SIGNING_PRIVATE_KEY` dodany, build z nim
-      przeszedł bez błędu o brakującym kluczu (silny dowód poprawności)
-- [ ] Zrobić pierwszy prawdziwy release: `npm run bump patch` → commit → `git tag vX.Y.Z`
-      → push + push --tags → sprawdzić, czy `release.yml` przechodzi i publikuje
-      `latest.json` (dopiero wtedy auto-update ma do czego się odnosić)
+- Status: done (jądro auto-update działa; UI live-test wciąż nie zrobiony)
+- [x] Push na `origin/main`
+- [x] Sekrety GitHub Actions `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+      dodane (po rotacji klucza, patrz TASK-032)
+- [x] `.github/workflows/bump-and-release.yml` (nowy) — workflow_dispatch (patch/
+      minor/major) robi bump+commit+tag+push, a na końcu jawnie odpala `release.yml`
+      przez `gh workflow run` (bo push taga z domyślnym GITHUB_TOKEN NIE odpala
+      innych workflowów automatycznie — trzeba było to obejść jawnym wywołaniem)
+- [x] `release.yml` dostał dodatkowo `workflow_dispatch:` (potrzebne do powyższego)
+- [x] Pierwszy prawdziwy release zrobiony i zweryfikowany (Release #1, v0.1.1,
+      podpisywanie działa po rotacji klucza)
 - [ ] Realny test UI w zbudowanej apce: zakładki Settings (Deploy/Appearance/
       Updates), zapis/odczyt ustawień, przycisk Check for Updates — nie było
       testowane na żywo, tylko statycznie (tsc, build, cargo test)
@@ -230,6 +236,38 @@ Backend, frontend, deploy SSH, devices CRUD, batch deploy, import/export .esx, d
 - Naprawa: src/pages/Editor.tsx — domyślna treść i placeholder zależne od
   isWindows (Windows: puste/PowerShell przykład, Linux/Alpine: bash jak dotąd)
 - Weryfikacja: tsc --noEmit OK
+
+### TASK-037: 4 realne bugi w deploy Windows, znalezione live-testem na VM — done
+- Kontekst: pierwszy raz przetestowano faktyczny kod `deploy_ssh` (nie ręczny
+  skrypt paramiko) end-to-end na realnej VM Windows 11 (192.168.230.131)
+- Bug 1 — `src-tauri/src/commands/deploy.rs`: upload skryptu przez legacy SCP
+  (`scp_send`) padał z `Session(-28)` / `LIBSSH2_ERROR_SCP_PROTOCOL` na
+  Win32-OpenSSH Server. Naprawa: przejście na SFTP (`sess.sftp().create()`)
+  dla obu gałęzi OS — Win32-OpenSSH i każdy Linux OpenSSH solidnie to wspierają
+- Bug 2 — `src-tauri/src/commands/generator.rs`: skrypt PowerShell wysyłany bez
+  BOM. Windows PowerShell 5.1 bez BOM czyta plik w kodowaniu systemowym, nie
+  UTF-8 — znaki spoza ASCII (em dash w szablonie) rozjeżdżały parser kilka
+  linii dalej ("Array index expression is missing or not valid"), zrywając
+  CAŁY skrypt przed jakimkolwiek wykonaniem. Naprawa: prefiks `\u{FEFF}` dla
+  wyjścia Windows w `generate_script()`
+- Bug 3 — `src-tauri/templates/provision.ps1.tera`: sekcja NTP używała złej
+  nazwy usługi (`w32tm` to CLI, usługa nazywa się `W32Time`) — pod
+  `Set-StrictMode`/`$ErrorActionPreference="Stop"` to przerywało CAŁY skrypt
+  na NTP (włączonym domyślnie), więc żaden Windows deploy z domyślnym
+  profilem nie doszedłby dalej niż Timezone. Naprawiono nazwę + dodano
+  try/catch (spójnie z resztą opcjonalnych sekcji)
+- Bug 4 — `provision.ps1.tera`: `check_cmd` dla pakietów na Windows sprawdzał
+  tylko `$?` (czy komenda nie rzuciła błędu), nie faktyczny wynik — więc
+  cmdlet zwracający `$false` bez wyjątku (np. `Test-Path`) był zawsze
+  traktowany jako "spełniony" i praca była cicho pomijana. Naprawa: capture
+  realnego zwróconego wyniku + reset `$LASTEXITCODE` przed wywołaniem
+- Weryfikacja: po każdej poprawce ponowny live-deploy na VM z pełnym profilem
+  (wszystkie sekcje: hostname/locale/timezone/ntp/pagefile/tpm/5 typów
+  pakietów/user/firewall enabled/ssh_key/custom scripts run_once+autostart)
+  — ostatni przebieg: exit 0, pusty stderr, wszystkie sekcje wykonane
+  poprawnie. 64/64 testów jednostkowych (dodano 2 regresyjne na BOM)
+- Efekt uboczny: SCP→SFTP fix dotyczy też Linuksa (ten sam kod uploadu),
+  choć bug -28 manifestował się tylko na Win32-OpenSSH
 
 ---
 
