@@ -60,12 +60,16 @@ catch { Write-Host "[WARN] Timezone: could not set '$_winTz'" -ForegroundColor Y
 {% if profile.system.ntp %}
 # --- NTP ---
 Write-Host "[STEP] NTP: configuring Windows Time service..."
-if ((Get-Service w32tm -ErrorAction SilentlyContinue).Status -ne "Running") {
-    Start-Service w32tm -ErrorAction SilentlyContinue
-    Set-Service w32tm -StartupType Automatic
+try {
+    if ((Get-Service W32Time -ErrorAction SilentlyContinue).Status -ne "Running") {
+        Start-Service W32Time -ErrorAction SilentlyContinue
+        Set-Service W32Time -StartupType Automatic
+    }
+    w32tm /config /manualpeerlist:"pool.ntp.org" /syncfromflags:manual /update 2>&1 | Out-Null
+    Write-Host "[OK] NTP: Windows Time service configured"
+} catch {
+    Write-Host "[WARN] NTP: could not configure ($($_.Exception.Message))" -ForegroundColor Yellow
 }
-w32tm /config /manualpeerlist:"pool.ntp.org" /syncfromflags:manual /update 2>&1 | Out-Null
-Write-Host "[OK] NTP: Windows Time service configured"
 {% endif %}
 
 {% if profile.system.swap_mb %}
@@ -126,7 +130,12 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 Write-Host "[STEP] {{ item.task_type }}: {{ item.name }}..."
 {% if item.check_cmd %}
 $_easixSkip = $false
-try { $null = Invoke-Expression "{{ item.check_cmd }}"; if ($LASTEXITCODE -eq 0 -or $?) { $_easixSkip = $true } } catch {}
+try {
+    $LASTEXITCODE = $null
+    $_checkResult = Invoke-Expression "{{ item.check_cmd }}"
+    if ($LASTEXITCODE -eq 0) { $_easixSkip = $true }
+    elseif ($null -eq $LASTEXITCODE -and [bool]$_checkResult) { $_easixSkip = $true }
+} catch {}
 {% elif item.task_type == "package" %}
 $_easixSkip = $false
 if (Get-Command "{{ item.name }}" -ErrorAction SilentlyContinue) { $_easixSkip = $true }

@@ -63,7 +63,13 @@ pub fn generate_script(profile: Profile) -> Result<String, String> {
     // a shell script with \r\n breaks `set -o pipefail` and heredoc terminators
     // on the Linux target, so force LF endings for shell (non-Windows) output.
     if win {
-        Ok(rendered)
+        // Windows PowerShell 5.1 has no encoding declaration in the script
+        // file itself, so without a BOM it decodes the bytes using the
+        // system codepage instead of UTF-8. Non-ASCII characters (e.g. the
+        // em dashes in this template) then decode to garbage bytes that
+        // desync the parser a few lines later ("Array index expression is
+        // missing or not valid"). A leading BOM makes it read as UTF-8.
+        Ok(format!("\u{FEFF}{rendered}"))
     } else {
         Ok(rendered.replace("\r\n", "\n"))
     }
@@ -526,6 +532,30 @@ mod tests {
         assert!(script.contains("#Requires -Version 5.1"), "Windows should generate PowerShell");
         assert!(script.contains("Write-Host"), "Windows script should use Write-Host");
         assert!(!script.contains("#!/"), "Windows script should not have bash shebang");
+    }
+
+    #[test]
+    fn test_generate_windows_script_has_utf8_bom() {
+        // Regression test: Windows PowerShell 5.1 has no way to declare a
+        // script's encoding, so without a leading BOM it decodes the file
+        // using the system codepage instead of UTF-8. Non-ASCII characters
+        // in the template (e.g. em dashes) then desync the parser a few
+        // lines later with a cryptic "Array index expression is missing or
+        // not valid" error, confirmed live against a real Windows 11 host.
+        let mut p = base_profile();
+        p.os = "windows2022".into();
+        let script = generate_script(p).unwrap();
+        assert!(
+            script.starts_with('\u{FEFF}'),
+            "Windows script must start with a UTF-8 BOM"
+        );
+    }
+
+    #[test]
+    fn test_generate_linux_script_has_no_bom() {
+        let p = base_profile();
+        let script = generate_script(p).unwrap();
+        assert!(!script.starts_with('\u{FEFF}'), "Linux script should not have a BOM");
     }
 
     #[test]
