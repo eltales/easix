@@ -29,6 +29,28 @@
   z poziomu WSL (`wsl -d Ubuntu -e rm /mnt/c/.../Docker/run/*`), potem
   restart Docker Desktop.
 
+### Bug + poprawki po pierwszym realnym użyciu (live test na VM)
+- **Bug (krytyczny)**: `ping`/`arp`/`nslookup` odpalane z apki okienkowej
+  (bez własnej konsoli) otwierały nowe okno cmd PER PROCES — użytkownik
+  odpalił skan /24 na swoim realnym PC i dostał ~250 okien cmd naraz.
+  Naprawa: `CREATE_NO_WINDOW` (0x08000000) jako creation flag na Windowsie
+  dla każdego spawnowanego procesu w discovery.rs. Zweryfikowane live na
+  VM (stary build bez fixa) — reprodukcja potwierdzona na małym /29 (kilka
+  okien mignęło), fix wgrany i wypchnięty, czeka na nowy build do
+  potwierdzenia że faktycznie znika.
+- **Feedback użytkownika → 3 nowe funkcje**:
+  - "Already visible" — 4. tryb skanu, czysto pasywny (czyta tylko ARP
+    cache hosta, zero ping/portów), natychmiastowy wynik dla urządzeń już
+    znanych systemowi
+  - "Stop scan" — przycisk podczas skanu, `cancel_scan(scan_id)` ustawia
+    flagę sprawdzaną przed startem pracy dla każdego hosta i przed fazą
+    wzbogacania (ARP+hostname); nie zabija już odpalonych procesów ping,
+    ale ogranicza ile NOWEJ pracy ruszy po kliknięciu
+  - Zakładki trybu skanu zablokowane podczas trwania skanu (mniej
+    mylącego stanu)
+- Dodano `.gitignore: /*.exe` — użytkownik wrzucił zbudowany `easix.exe`
+  bezpośrednio do katalogu repo, o mały włos by się nie zacommitował
+
 ### Poza zakresem Fazy 1 (Faza 2, jeśli będzie potrzebna)
 - IPv6 link-local NDP discovery (`ff02::1`) — wykrywa urządzenie nawet bez
   znanego IPv4
