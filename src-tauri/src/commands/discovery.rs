@@ -4,6 +4,24 @@ use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// CREATE_NO_WINDOW — without this, every `ping`/`arp`/`nslookup` child
+/// process spawned from a GUI (non-console) app pops up its own console
+/// window. A range scan spawns one per host, so a /24 scan opened ~250
+/// windows before this fix.
+#[cfg(windows)]
+fn new_command(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut cmd = Command::new(program);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+#[cfg(not(windows))]
+fn new_command(program: &str) -> Command {
+    Command::new(program)
+}
+
 /// Smallest subnet we'll scan (host-bit count), i.e. largest allowed range.
 /// /20 = 4094 usable hosts — enough for any realistic LAN, small enough to
 /// finish in a reasonable time and not look like a port-scanning attack.
@@ -173,7 +191,7 @@ fn ping_alive(ip: &str) -> bool {
         vec!["-c".into(), "1".into(), "-W".into(), "1".into(), ip.into()],
     );
 
-    Command::new(program)
+    new_command(program)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -201,7 +219,7 @@ fn scan_ports(ip: &str, ports: &[u16]) -> Vec<u16> {
 /// it doesn't exit in time (e.g. `nslookup` against an unreachable DNS
 /// server can otherwise hang for many seconds).
 fn run_capture_with_timeout(program: &str, args: &[&str], timeout: Duration) -> Option<String> {
-    let mut child = Command::new(program)
+    let mut child = new_command(program)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
