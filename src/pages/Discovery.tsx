@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { DevicePreset, DiscoveredHost, NetworkInterface } from "../types";
 import { Select } from "../components/Select";
 
-type ScanMode = "interface" | "preset" | "custom";
+type ScanMode = "visible" | "interface" | "preset" | "custom";
 
 const MODES: { id: ScanMode; label: string }[] = [
+  { id: "visible", label: "Already visible" },
   { id: "interface", label: "Network interfaces" },
   { id: "preset", label: "Common devices" },
   { id: "custom", label: "Custom range" },
@@ -20,18 +21,24 @@ function guessDeviceType(host: DiscoveredHost): string {
   return "Unknown device";
 }
 
+function newScanId() {
+  return crypto.randomUUID();
+}
+
 export default function Discovery() {
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState<ScanMode>("interface");
+  const [mode, setMode] = useState<ScanMode>("visible");
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
   const [presets, setPresets] = useState<DevicePreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState("");
   const [customCidr, setCustomCidr] = useState("192.168.1.0/24");
 
   const [scanning, setScanning] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
   const [results, setResults] = useState<DiscoveredHost[] | null>(null);
+  const activeScanId = useRef<string | null>(null);
 
   useEffect(() => {
     api.listNetworkInterfaces().then(setInterfaces).catch((e) => setError(String(e)));
@@ -43,6 +50,7 @@ export default function Discovery() {
 
   const runScan = async (fn: () => Promise<DiscoveredHost[]>) => {
     setScanning(true);
+    setStopping(false);
     setError("");
     setResults(null);
     try {
@@ -52,17 +60,37 @@ export default function Discovery() {
       setError(String(e));
     } finally {
       setScanning(false);
+      activeScanId.current = null;
     }
   };
 
-  const scanInterface = (iface: NetworkInterface) => runScan(() => api.scanCidr(iface.cidr));
+  const scanVisible = () => runScan(() => api.scanVisible());
+
+  const scanInterface = (iface: NetworkInterface) => {
+    const id = newScanId();
+    activeScanId.current = id;
+    return runScan(() => api.scanCidr(id, iface.cidr));
+  };
 
   const scanPreset = () => {
     const preset = presets.find((p) => p.name === selectedPreset);
-    if (preset) runScan(() => api.scanHosts(preset.ips));
+    if (!preset) return;
+    const id = newScanId();
+    activeScanId.current = id;
+    return runScan(() => api.scanHosts(id, preset.ips));
   };
 
-  const scanCustom = () => runScan(() => api.scanCidr(customCidr.trim()));
+  const scanCustom = () => {
+    const id = newScanId();
+    activeScanId.current = id;
+    return runScan(() => api.scanCidr(id, customCidr.trim()));
+  };
+
+  const stopScan = async () => {
+    if (!activeScanId.current) return;
+    setStopping(true);
+    await api.cancelScan(activeScanId.current);
+  };
 
   const addAsDevice = (host: DiscoveredHost) => {
     navigate("/devices", {
@@ -89,8 +117,9 @@ export default function Discovery() {
       </div>
 
       <div className="bg-amber-900/20 border border-amber-700/40 text-amber-300 p-3 rounded-xl mb-6 text-xs">
-        Scanning sends real network traffic (ping + port probes) to every address in range.
-        Only scan networks you own or are authorized to test — some firewalls/security tools may flag it.
+        Active scans (all modes except "Already visible") send real network traffic (ping + port probes)
+        to every address in range. Only scan networks you own or are authorized to test — some
+        firewalls/security tools may flag it.
       </div>
 
       {/* Mode tabs */}
@@ -99,8 +128,9 @@ export default function Discovery() {
           <button
             type="button"
             key={m.id}
+            disabled={scanning}
             onClick={() => setMode(m.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               mode === m.id
                 ? "border-primary-500 text-primary-400"
                 : "border-transparent text-surface-200 hover:text-surface-100"
@@ -113,6 +143,23 @@ export default function Discovery() {
 
       {/* Mode body */}
       <div className="bg-surface-800 border border-surface-500 rounded-xl p-5 mb-6">
+        {mode === "visible" && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-surface-200">
+              Reads what your machine already knows (ARP cache) — no traffic sent, no waiting.
+              Only shows devices it has recently talked to.
+            </p>
+            <button
+              type="button"
+              disabled={scanning}
+              onClick={scanVisible}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 hover:bg-primary-500 text-white disabled:opacity-50 transition-colors flex-shrink-0"
+            >
+              Check
+            </button>
+          </div>
+        )}
+
         {mode === "interface" && (
           <div>
             {interfaces.length === 0 ? (
@@ -202,12 +249,22 @@ export default function Discovery() {
         <div className="text-center py-16 text-surface-300">
           <p className="flex items-center justify-center gap-2">
             <span className="flex gap-0.5 items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-surface-100 animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-surface-100 animate-bounce" style={{ animationDelay: "120ms" }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-surface-100 animate-bounce" style={{ animationDelay: "240ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-bounce" style={{ animationDelay: "120ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-bounce" style={{ animationDelay: "240ms" }} />
             </span>
-            Scanning…
+            {stopping ? "Stopping…" : "Scanning…"}
           </p>
+          {activeScanId.current && (
+            <button
+              type="button"
+              disabled={stopping}
+              onClick={stopScan}
+              className="mt-4 px-4 py-2 text-sm font-medium rounded-lg border border-red-700/50 text-red-300 hover:bg-red-900/20 disabled:opacity-50 transition-colors"
+            >
+              Stop scan
+            </button>
+          )}
         </div>
       )}
 

@@ -96,9 +96,13 @@ export const api = {
 
   listDevicePresets: () => invoke<DevicePreset[]>("list_device_presets"),
 
-  scanCidr: (cidr: string, ports?: number[]) =>
-    invoke<DiscoveredHost[]>("scan_cidr", { cidr, ports }),
+  scanCidr: (scanId: string, cidr: string, ports?: number[]) =>
+    invoke<DiscoveredHost[]>("scan_cidr", { scanId, cidr, ports }),
 
-  scanHosts: (ips: string[], ports?: number[]) =>
-    invoke<DiscoveredHost[]>("scan_hosts", { ips, ports }),
+  scanHosts: (scanId: string, ips: string[], ports?: number[]) =>
+    invoke<DiscoveredHost[]>("scan_hosts", { scanId, ips, ports }),
+
+  scanVisible: () => invoke<DiscoveredHost[]>("scan_visible"),
+
+  cancelScan: (scanId: string) => invoke<boolean>("cancel_scan", { scanId }),
 };

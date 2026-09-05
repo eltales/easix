@@ -47,6 +47,8 @@ fn main() {
             discovery::list_device_presets,
             discovery::scan_cidr,
             discovery::scan_hosts,
+            discovery::scan_visible,
+            discovery::cancel_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

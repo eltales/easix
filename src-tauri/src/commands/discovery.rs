@@ -2,6 +2,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// CREATE_NO_WINDOW — without this, every `ping`/`arp`/`nslookup` child
@@ -312,11 +314,36 @@ fn lookup_vendor(mac: &str) -> Option<String> {
         .map(|(_, vendor)| vendor.to_string())
 }
 
-async fn scan_ip_list(ips: Vec<Ipv4Addr>, ports: Vec<u16>) -> Vec<DiscoveredHost> {
+/// Registry of in-progress scans so the frontend can request an early stop.
+/// A scan checks its own flag before doing any work for a given host (skips
+/// queued-but-not-yet-started hosts) and again before the post-scan ARP/
+/// hostname enrichment pass (skips it entirely) — it can't kill a `ping`
+/// that's already spawned, but it bounds how much more work starts.
+fn active_scans() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static ACTIVE_SCANS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    ACTIVE_SCANS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[tauri::command]
+pub fn cancel_scan(scan_id: String) -> bool {
+    if let Ok(map) = active_scans().lock() {
+        if let Some(flag) = map.get(&scan_id) {
+            flag.store(true, Ordering::Relaxed);
+            return true;
+        }
+    }
+    false
+}
+
+async fn scan_ip_list(ips: Vec<Ipv4Addr>, ports: Vec<u16>, cancel_flag: Arc<AtomicBool>) -> Vec<DiscoveredHost> {
     let mut handles = Vec::with_capacity(ips.len());
     for ip in ips {
         let ports = ports.clone();
+        let cancel_flag = cancel_flag.clone();
         handles.push(tauri::async_runtime::spawn_blocking(move || {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return None;
+            }
             let ip_str = ip.to_string();
             let alive = ping_alive(&ip_str);
             let open_ports = scan_ports(&ip_str, &ports);
@@ -335,8 +362,11 @@ async fn scan_ip_list(ips: Vec<Ipv4Addr>, ports: Vec<u16>) -> Vec<DiscoveredHost
         }
     }
 
-    if alive_hosts.is_empty() {
-        return Vec::new();
+    if alive_hosts.is_empty() || cancel_flag.load(Ordering::Relaxed) {
+        return alive_hosts
+            .into_iter()
+            .map(|(ip, open_ports)| DiscoveredHost { ip, open_ports, ..Default::default() })
+            .collect();
     }
 
     let arp_table = tauri::async_runtime::spawn_blocking(read_arp_table)
@@ -370,21 +400,79 @@ async fn scan_ip_list(ips: Vec<Ipv4Addr>, ports: Vec<u16>) -> Vec<DiscoveredHost
         .collect()
 }
 
-#[tauri::command]
-pub async fn scan_cidr(cidr: String, ports: Option<Vec<u16>>) -> Result<Vec<DiscoveredHost>, String> {
-    let ips = parse_cidr(&cidr)?;
-    let ports = ports.unwrap_or_else(|| DEFAULT_SCAN_PORTS.to_vec());
-    Ok(scan_ip_list(ips, ports).await)
+/// Registers `scan_id` and returns its cancellation flag; cleaned up by the
+/// caller via `unregister_scan` once the scan finishes (cancelled or not).
+fn register_scan(scan_id: &str) -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut map) = active_scans().lock() {
+        map.insert(scan_id.to_string(), flag.clone());
+    }
+    flag
+}
+
+fn unregister_scan(scan_id: &str) {
+    if let Ok(mut map) = active_scans().lock() {
+        map.remove(scan_id);
+    }
 }
 
 #[tauri::command]
-pub async fn scan_hosts(ips: Vec<String>, ports: Option<Vec<u16>>) -> Result<Vec<DiscoveredHost>, String> {
+pub async fn scan_cidr(scan_id: String, cidr: String, ports: Option<Vec<u16>>) -> Result<Vec<DiscoveredHost>, String> {
+    let ips = parse_cidr(&cidr)?;
+    let ports = ports.unwrap_or_else(|| DEFAULT_SCAN_PORTS.to_vec());
+    let flag = register_scan(&scan_id);
+    let result = scan_ip_list(ips, ports, flag).await;
+    unregister_scan(&scan_id);
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn scan_hosts(scan_id: String, ips: Vec<String>, ports: Option<Vec<u16>>) -> Result<Vec<DiscoveredHost>, String> {
     let parsed: Vec<Ipv4Addr> = ips
         .iter()
         .map(|s| s.parse::<Ipv4Addr>().map_err(|_| format!("Invalid IP address: {s}")))
         .collect::<Result<_, _>>()?;
     let ports = ports.unwrap_or_else(|| DEFAULT_SCAN_PORTS.to_vec());
-    Ok(scan_ip_list(parsed, ports).await)
+    let flag = register_scan(&scan_id);
+    let result = scan_ip_list(parsed, ports, flag).await;
+    unregister_scan(&scan_id);
+    Ok(result)
+}
+
+/// Purely passive: reads whatever is already in the OS's ARP/neighbor
+/// cache (devices this machine has recently talked to — e.g. the gateway,
+/// or anything that's sent traffic) without sending a single ping or port
+/// probe. Near-instant, since it's not waiting on any network round trip.
+#[tauri::command]
+pub async fn scan_visible() -> Vec<DiscoveredHost> {
+    let arp_table = tauri::async_runtime::spawn_blocking(read_arp_table)
+        .await
+        .unwrap_or_default();
+
+    let mut hostname_handles = Vec::with_capacity(arp_table.len());
+    for ip in arp_table.keys() {
+        let ip = ip.clone();
+        hostname_handles.push(tauri::async_runtime::spawn_blocking(move || {
+            (ip.clone(), reverse_hostname(&ip))
+        }));
+    }
+    let mut hostnames = HashMap::new();
+    for handle in hostname_handles {
+        if let Ok((ip, name)) = handle.await {
+            if let Some(name) = name {
+                hostnames.insert(ip, name);
+            }
+        }
+    }
+
+    arp_table
+        .into_iter()
+        .map(|(ip, mac)| {
+            let vendor = lookup_vendor(&mac);
+            let hostname = hostnames.get(&ip).cloned();
+            DiscoveredHost { ip, mac: Some(mac), vendor, open_ports: vec![], hostname }
+        })
+        .collect()
 }
 
 #[cfg(test)]

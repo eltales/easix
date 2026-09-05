@@ -4,6 +4,7 @@ dist/
 
 # Rust / Tauri
 src-tauri/target/
+/*.exe
 
 # IDE
 .idea/
