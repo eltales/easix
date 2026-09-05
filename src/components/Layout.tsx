@@ -17,6 +17,7 @@ const links = [
   { to: "/preview", label: "Preview"   },
   { to: "/deploy",  label: "Deploy"    },
   { to: "/devices", label: "Devices"   },
+  { to: "/discovery", label: "Discovery" },
 ];
 
 const IconGear = () => (

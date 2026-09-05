@@ -4,6 +4,126 @@
 
 ---
 
+## TASK-039 — Wykrywanie urządzeń (Scan for devices), Faza 1 — done
+- Status: done (kod + testy jednostkowe zielone; realny UI click-through w
+  zbudowanej apce NIE zrobiony — brak lokalnego toolchaina Rust na Windows,
+  tylko Docker/Linux do `cargo test`; ten sam gap co Settings/Updates)
+- Zaimplementowane dokładnie wg planu z Fazy 1 (patrz niżej, zachowane jako
+  dokumentacja): auto-detekcja interfejsów, presety, własny CIDR, ping+port
+  sweep, MAC→vendor (OUI), hostname (nslookup, best-effort), UI wyników,
+  "Dodaj jako urządzenie" → prefill Devices przez `navigate(..., {state})`
+- Pliki: src-tauri/src/commands/discovery.rs (nowy), mod.rs, main.rs,
+  Cargo.toml (+if-addrs), src/pages/Discovery.tsx (nowy), src/api.ts,
+  src/types.ts, src/App.tsx, src/components/Layout.tsx, src/pages/Devices.tsx
+  (hook na location.state.prefill)
+- Weryfikacja: `cargo test --features ssh` 77/77 (11 nowych testów dla
+  discovery.rs: parse_cidr, looks_like_ipv4/mac, lookup_vendor,
+  parse_nslookup_hostname, netmask_to_prefix_len), `tsc --noEmit` czysto,
+  `npm run build` czysto. Jeden test najpierw czerwony (parser nslookup nie
+  łapał formatu Linuksowego "name = X" bo szukał tylko "Name:" na początku
+  linii) — naprawiony przed commitem.
+- Napotkany blocker środowiskowy (rozwiązany): Docker Desktop crashował przy
+  starcie ("sailor-ingest.sock: file cannot be accessed") — stare pliki
+  socket w `%LOCALAPPDATA%\Docker\run\` to reparse pointy, których Windows
+  (Explorer/PowerShell Remove-Item) nie potrafi usunąć; trzeba je skasować
+  z poziomu WSL (`wsl -d Ubuntu -e rm /mnt/c/.../Docker/run/*`), potem
+  restart Docker Desktop.
+
+### Poza zakresem Fazy 1 (Faza 2, jeśli będzie potrzebna)
+- IPv6 link-local NDP discovery (`ff02::1`) — wykrywa urządzenie nawet bez
+  znanego IPv4
+- Banner grabbing / tytuł strony logowania HTTP — mocniejsza identyfikacja
+- Realne wykrywanie fizycznych urządzeń USB (RPi w trybie gadget)
+
+<details>
+<summary>Oryginalny plan Fazy 1 (zachowany dla kontekstu)</summary>
+
+- Status: in-progress (zatwierdzone przez użytkownika, Faza 1)
+
+### Cel
+Nowa zakładka w panelu bocznym do wykrywania urządzeń w sieci lokalnej
+(podłączonych kablem Ethernet lub przez adapter USB-Ethernet), żeby nie
+trzeba było ręcznie znać/wpisywać IP przed dodaniem urządzenia do Devices.
+Szczególnie przydatne dla świeżych/fabrycznych urządzeń (MikroTik, Raspberry
+Pi) które mają znane domyślne adresy albo dopiero co dostały IP z DHCP.
+
+### Zakres — Faza 1 (ten PR)
+1. **Auto-detekcja interfejsów**: lista aktywnych kart sieciowych hosta
+   (w tym USB-Ethernet — system i tak widzi to jako zwykłą kartę) i ich
+   podsieci IPv4, wybierane jako cel skanu jednym kliknięciem.
+2. **Presety popularnych urządzeń** — dropdown z listą (MikroTik
+   192.168.88.1, TP-Link 192.168.0.1/192.168.1.1, Ubiquiti 192.168.1.20,
+   generyczny domowy router 192.168.1.1/192.168.0.1, itd.) — statyczna lista
+   w kodzie, łatwa do rozszerzenia później.
+3. **Własny zakres** — pole na CIDR (np. `192.168.1.0/24`) albo zakres IP.
+4. **Sam skan**: ping sweep po wybranym zakresie + sprawdzenie wybranych
+   portów (22 SSH, 23 Telnet, 80/443 HTTP(S), 3389 RDP, 8291 Winbox,
+   5985/5986 WinRM) na hostach które odpowiedziały na ping.
+5. **Identyfikacja per-host**:
+   - MAC adres (z tablicy ARP hosta po zakończeniu ping) → producent przez
+     lokalną bazę OUI (pierwsze 3 bajty MAC, statyczny plik/tabela w repo,
+     np. wyciąg z publicznej listy IEEE — tylko popularne prefiksy, nie
+     cała baza ~30k wpisów, żeby nie pompować binarki)
+   - Lista otwartych portów z kroku 4 jako wskazówka typu urządzenia
+   - Hostname jeśli rozwiązywalny (DNS/mDNS `.local`)
+6. **UI wyników**: lista/karty z IP, MAC, producentem, otwartymi portami,
+   przyciskiem **"Dodaj jako urządzenie"** który wypełnia istniejący
+   formularz dodawania w Devices (host/port/domyślny user wg zgadniętego
+   typu).
+7. **Implementacja przez narzędzia systemowe, nie surowe sockety** —
+   `arp -a`, `ping`, natywny TCP connect-scan na portach (Rust
+   `std::net::TcpStream` z timeoutem, bez podnoszenia uprawnień). Bez UAC,
+   bez adminskich raw socketów.
+8. **Windows + Linux** (Mac pomijamy — apka i tak nie buduje bundla na
+   Mac, patrz `tauri.conf.json` bundle.targets: deb/appimage/nsis) — komendy
+   systemowe różnią się (`arp -a` działa na obu, ale parsing wyjścia inny;
+   enumeracja interfejsów przez różne API).
+
+### Poza zakresem Fazy 1 (możliwa Faza 2, osobny PR)
+- **IPv6 link-local NDP discovery** (`ff02::1` multicast ping + odczyt
+  cache sąsiadów) — wykrywa urządzenia nawet bez znanego IPv4/DHCP, bardzo
+  przydatne dla świeżego MikroTika/Linuksa podłączonego bezpośrednio
+  kablem. Zostawione na Fazę 2 bo wymaga osobnej ścieżki kodu (ICMPv6,
+  parsing `netsh interface ipv6 show neighbors` / `ip -6 neigh`).
+- **Banner grabbing / HTTP title scraping** (SSH banner, tytuł strony
+  logowania) — mocniejsza identyfikacja typu urządzenia, ale dodatkowa
+  złożoność (parsowanie odpowiedzi HTTP/SSH). Faza 2.
+- Realne wykrywanie fizycznych urządzeń USB (np. RPi w trybie gadget przez
+  kabel USB, bez sieci) — inna kategoria niż skan sieciowy, osobna decyzja
+  jeśli okaże się potrzebna.
+
+### Pliki do zmiany/dodania
+- `src-tauri/src/commands/discovery.rs` (nowy) — komendy Tauri: lista
+  interfejsów, skan zakresu, lookup OUI
+- `src-tauri/src/oui_db.rs` lub `assets/oui_prefixes.json` (nowy) — statyczna
+  baza popularnych prefiksów MAC → producent
+- `src-tauri/src/main.rs` — rejestracja nowych komend
+- `src/pages/Discovery.tsx` (nowa strona)
+- `src/App.tsx` / routing — nowa trasa
+- komponent sidebar (znaleźć plik nawigacji) — nowa pozycja w menu
+- `src/pages/Devices.tsx` — hook do "Dodaj jako urządzenie" (prefill
+  formularza z wyniku skanu)
+
+### Ryzyka
+- Aktywne skanowanie sieci może wywołać alert firewalla/EDR na skanowanej
+  sieci — to narzędzie do własnej infrastruktury użytkownika, ale warto
+  dodać w UI krótką notkę/ostrzeżenie.
+- Czas skanu dla dużych zakresów (/24 = 254 hosty) — trzeba
+  zrównoleglić (skan portów per-host równolegle z timeoutem), inaczej
+  UI będzie "wisieć" sekundy/minuty.
+- Baza OUI = statyczna lista w repo, będzie się starzeć (nowe prefiksy
+  producentów) — akceptowalne dla MVP, nie auto-aktualizowana.
+
+### Czego NIE zmieniam
+- Istniejący flow dodawania urządzeń ręcznie (Devices.tsx) zostaje bez
+  zmian poza dodaniem opcjonalnego prefill z wyniku skanu.
+- Generator skryptów provisioningu (`generator.rs`, `.tera`) — bez zmian,
+  to osobna funkcja niezwiązana z discovery.
+
+</details>
+
+---
+
 ## TASK-038: Live-test deployu na prawdziwej VM Windows 11 — done
 
 VM `D:\VMs\windows-test` (Windows 11 Enterprise Evaluation 25H2, build

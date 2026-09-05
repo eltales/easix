@@ -4,7 +4,7 @@
 mod commands;
 mod models;
 
-use commands::{config, deploy, devices, generator, profiles, secrets, settings};
+use commands::{config, deploy, devices, discovery, generator, profiles, secrets, settings};
 
 fn main() {
     tauri::Builder::default()
@@ -43,6 +43,10 @@ fn main() {
             secrets::delete_device_secret,
             settings::get_settings,
             settings::save_settings,
+            discovery::list_network_interfaces,
+            discovery::list_device_presets,
+            discovery::scan_cidr,
+            discovery::scan_hosts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { Device } from "../types";
 import { useDevices, PingStatus } from "../context/DevicesContext";
@@ -249,6 +249,7 @@ function DeviceCard({ device: d, status, onEdit, onDelete, onDuplicate, onConnec
 export default function Devices() {
   const { devices, status, refreshing, reload, pingAll, setDeviceConnected } = useDevices();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [editing, setEditing]       = useState<Device | null>(null);
   const [form, setForm]             = useState<Omit<Device, "id">>(EMPTY);
@@ -275,11 +276,23 @@ export default function Devices() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  const openNew = () => {
-    setEditing({ id: generateId(), ...EMPTY });
-    setForm(EMPTY); setTagInput(""); setError("");
+  const openNew = (prefill?: Partial<Omit<Device, "id">>) => {
+    const initial = { ...EMPTY, ...prefill };
+    setEditing({ id: generateId(), ...initial });
+    setForm(initial); setTagInput(""); setError("");
     setDevicePassword(""); setHasSavedPassword(false);
   };
+
+  // Opened via Discovery's "Add as device" button (navigate state), e.g.
+  // { prefill: { name, host, port, username, description } }.
+  useEffect(() => {
+    const prefill = (location.state as { prefill?: Partial<Omit<Device, "id">> } | null)?.prefill;
+    if (prefill) {
+      openNew(prefill);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const openEdit = (d: Device) => {
     setEditing(d);
@@ -382,7 +395,7 @@ export default function Devices() {
           </button>
           <button
             type="button"
-            onClick={openNew}
+            onClick={() => openNew()}
             className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-500 transition-colors"
           >
             + Add Device

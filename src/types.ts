@@ -65,6 +65,26 @@ export interface Device {
   last_connected?: string;
 }
 
+export interface NetworkInterface {
+  name: string;
+  ip: string;
+  prefix_len: number;
+  cidr: string;
+}
+
+export interface DevicePreset {
+  name: string;
+  ips: string[];
+}
+
+export interface DiscoveredHost {
+  ip: string;
+  mac?: string;
+  vendor?: string;
+  open_ports: number[];
+  hostname?: string;
+}
+
 export interface Profile {
   os: "none" | "debian11" | "ubuntu2204" | "ubuntu2404" | "alpine318" | "windows2019" | "windows2022" | "windows11" | "windows10";
   hostname: string;

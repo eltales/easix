@@ -5,6 +5,7 @@ import Editor from "./pages/Editor";
 import Preview from "./pages/Preview";
 import Deploy from "./pages/Deploy";
 import Devices from "./pages/Devices";
+import Discovery from "./pages/Discovery";
 import { DevicesProvider } from "./context/DevicesContext";
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/preview" element={<Preview />} />
         <Route path="/deploy" element={<Deploy />} />
         <Route path="/devices" element={<Devices />} />
+        <Route path="/discovery" element={<Discovery />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

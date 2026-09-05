@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { AppSettings, Device, ImportResult, Profile } from "./types";
+import { AppSettings, Device, DevicePreset, DiscoveredHost, ImportResult, NetworkInterface, Profile } from "./types";
 
 export const api = {
   listProfiles: () => invoke<string[]>("list_profiles"),
@@ -91,4 +91,14 @@ export const api = {
 
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_settings", { settings }),
+
+  listNetworkInterfaces: () => invoke<NetworkInterface[]>("list_network_interfaces"),
+
+  listDevicePresets: () => invoke<DevicePreset[]>("list_device_presets"),
+
+  scanCidr: (cidr: string, ports?: number[]) =>
+    invoke<DiscoveredHost[]>("scan_cidr", { cidr, ports }),
+
+  scanHosts: (ips: string[], ports?: number[]) =>
+    invoke<DiscoveredHost[]>("scan_hosts", { ips, ports }),
 };
